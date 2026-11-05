@@ -5,7 +5,7 @@
 [versions]
 agp = "9.5.0"              # Android Gradle Plugin：负责把代码打包成 APK
 kotlin = "2.4.21"
-ksp = "2.3.12"             # Kotlin 注解处理器，Hilt 用它在编译期生成代码
+ksp = "2.3.13"             # Kotlin 注解处理器，Hilt 用它在编译期生成代码
 hilt = "2.60.1"
 coreKtx = "1.19.1"
 lifecycle = "2.11.0"
