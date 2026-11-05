@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- "广告测试"图标的背景色：橙色，和正式图标的深蓝色区分开 -->
+    <color name="fake_ad_icon_background">#FA541C</color>
+</resources>

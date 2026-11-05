@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  debug 包专用的清单文件。构建 debug 包时，它会和 src/main/AndroidManifest.xml 自动合并；
+  release 包里不会包含这里登记的任何页面。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          模拟开屏广告页。
+          - 带 MAIN + LAUNCHER：桌面上会多一个"广告测试"图标，点它就像冷启动一个带开屏广告的 App。
+          - taskAffinity：让它在"最近任务"里成为独立的一项，像另一个 App 一样，不和 Anchor 主页混在一起。
+        -->
+        <activity
+            android:name=".debug.FakeSplashAdActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_fake_ad"
+            android:label="广告测试"
+            android:roundIcon="@mipmap/ic_fake_ad"
+            android:taskAffinity="com.nickyuan.anchor.fakead">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 模拟"广告详情页"：摇一摇被触发后跳到这里。exported="false" 表示只允许本 App 内部打开 -->
+        <activity
+            android:name=".debug.FakeAdLandingActivity"
+            android:exported="false"
+            android:taskAffinity="com.nickyuan.anchor.fakead" />
+    </application>
+
+</manifest>

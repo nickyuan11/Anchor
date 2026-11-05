@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.nickyuan.anchor.debug.DebugPanel
 import com.nickyuan.anchor.ui.theme.AnchorTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -72,6 +74,9 @@ fun HomeScreen() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(32.dp))
+            // 调试面板：debug 包里显示模拟广告入口和测试结果，release 包里是空的
+            DebugPanel(Modifier.fillMaxWidth())
         }
     }
 }

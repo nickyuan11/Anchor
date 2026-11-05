@@ -61,4 +61,7 @@ dependencies {
     // Hilt 依赖注入：运行时库 + 编译期代码生成器（ksp 相当于 Java 的 annotationProcessor）
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // 单元测试（在电脑上运行，不需要模拟器）
+    testImplementation(libs.junit)
 }
