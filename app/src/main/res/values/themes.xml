@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  系统层面的主题，只影响 App 启动瞬间（Compose 还没开始绘制时）的窗口外观。
+  真正的界面配色在 ui/theme/Theme.kt 里。
+-->
+<resources>
+    <style name="Theme.Anchor" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

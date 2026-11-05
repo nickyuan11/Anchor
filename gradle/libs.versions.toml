@@ -1,0 +1,37 @@
+# Version Catalog：所有依赖和插件的版本集中管理，类似 Maven 的 <dependencyManagement>。
+# 在 build.gradle.kts 里用 libs.xxx 引用，例如 libs.androidx.core.ktx。
+# 以后升级依赖只改这个文件。
+
+[versions]
+agp = "9.5.0"              # Android Gradle Plugin：负责把代码打包成 APK
+kotlin = "2.4.21"
+ksp = "2.3.13"             # Kotlin 注解处理器，Hilt 用它在编译期生成代码
+hilt = "2.60.1"
+coreKtx = "1.19.1"
+lifecycle = "2.11.0"
+activityCompose = "1.13.0"
+composeBom = "2026.09.00"  # Compose BOM：统一管理所有 Compose 库的版本，类似 Spring Boot 的 BOM
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+# 以下 Compose 库不写版本，由 BOM 决定
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+# AGP 9 起内置 Kotlin 支持，不再需要 org.jetbrains.kotlin.android 插件；
+# 但 Compose 编译器插件仍需单独声明，且版本必须与 Kotlin 一致
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

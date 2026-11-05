@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 默认（英文）字符串。系统语言为中文时，会改用 values-zh/strings.xml 里的同名字符串 -->
+<resources>
+    <string name="app_name">Anchor</string>
+    <string name="service_status_placeholder">Accessibility service: not set up yet (coming in M2)</string>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 中文字符串：手机系统语言是中文时自动使用 -->
+<resources>
+    <string name="app_name">定海神针</string>
+    <string name="service_status_placeholder">无障碍服务：尚未接入（M2 实现）</string>
+</resources>

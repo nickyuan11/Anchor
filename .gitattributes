@@ -1,0 +1,4 @@
+# Windows 批处理必须用 CRLF 换行，Unix 脚本必须用 LF，否则在对应系统上无法运行
+*.bat text eol=crlf
+gradlew text eol=lf
+*.jar binary

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml：App 的"清单文件"，告诉系统这个 App 有哪些组件。
+  Android 的四大组件（Activity 页面、Service 服务、BroadcastReceiver 广播接收器、
+  ContentProvider 内容提供者）都必须在这里登记，系统才会认。
+  M2 的无障碍服务也会登记在这里。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:name=".AnchorApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Anchor">
+
+        <!--
+          exported="true"：允许系统桌面启动这个页面。
+          intent-filter 里的 MAIN + LAUNCHER 表示"它是 App 的入口，在桌面显示图标"。
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

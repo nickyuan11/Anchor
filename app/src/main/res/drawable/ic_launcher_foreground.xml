@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  App 图标前景：一个白色的锚。
+  这是矢量图（类似 SVG），任何分辨率都清晰，不用为每种屏幕密度准备 PNG。
+  画布 108x108，系统只保证中间 66x66 区域可见（不同桌面会裁成圆形、方形等）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 顶部圆环 -->
+    <path
+        android:pathData="M54,28 a5,5 0 1,1 0,10 a5,5 0 1,1 0,-10"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFF" />
+    <!-- 竖杆 + 横杆 -->
+    <path
+        android:pathData="M54,38 L54,80 M44,47 L64,47"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+    <!-- 底部弧形锚臂，两端带倒钩 -->
+    <path
+        android:pathData="M36,62 A18,18 0 0,0 72,62 M36,62 L31,67 M36,62 L41,66 M72,62 L77,67 M72,62 L67,66"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+.kotlin/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本机 SDK 路径，每台电脑不同，不提交
+local.properties
+
+# 签名文件不提交（M5 配置 release 签名时会用到）
+*.jks
+*.keystore
+
+# 系统文件
+.DS_Store
+Thumbs.db
