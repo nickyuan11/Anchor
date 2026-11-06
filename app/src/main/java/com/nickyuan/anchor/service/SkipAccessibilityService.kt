@@ -23,6 +23,12 @@ import com.nickyuan.anchor.engine.Debouncer
 import com.nickyuan.anchor.engine.FallbackConfig
 import com.nickyuan.anchor.engine.FallbackMatcher
 import com.nickyuan.anchor.engine.LaunchTracker
+import com.nickyuan.anchor.engine.PerLaunchCounter
+import com.nickyuan.anchor.engine.RuleDecision
+import com.nickyuan.anchor.engine.RuleMatcher
+import com.nickyuan.anchor.rule.RuleRepository
+import com.nickyuan.anchor.rule.model.AppRules
+import com.nickyuan.anchor.rule.model.ClickBy
 import com.nickyuan.anchor.snapshot.AppSnapshot
 import com.nickyuan.anchor.snapshot.DeviceSnapshot
 import com.nickyuan.anchor.snapshot.FloatingCaptureButton
@@ -71,6 +77,7 @@ class SkipAccessibilityService : AccessibilityService() {
     @Inject lateinit var snapshotRepository: SnapshotRepository
     @Inject lateinit var appLabelProvider: AppLabelProvider
     @Inject lateinit var diagnostics: DiagnosticsLog
+    @Inject lateinit var ruleRepository: RuleRepository
 
     /**
      * limitedParallelism(1)：从后台线程池里"切"出一个同一时刻只运行一个任务的调度器，
@@ -88,6 +95,13 @@ class SkipAccessibilityService : AccessibilityService() {
     private val launchTracker = LaunchTracker(clock = SystemClock::uptimeMillis)
     private val debouncer = Debouncer(clock = SystemClock::uptimeMillis)
     private val fallbackMatcher = FallbackMatcher()
+    private val ruleMatcher = RuleMatcher()
+    private val ruleCounter = PerLaunchCounter()
+
+    // 用户设置，由主线程订阅 DataStore 后更新，引擎线程读取。
+    // @Volatile：保证一个线程写入后，其他线程马上能读到最新值（和 Java 的 volatile 一样）
+    @Volatile private var whitelist: Set<String> = emptySet()
+    @Volatile private var fallbackEnabled: Boolean = true
     private lateinit var actionExecutor: ActionExecutor
 
     /** 是否已有一个"内容变化"任务在排队或执行。用于丢弃密集的重复事件（节流） */
@@ -112,12 +126,22 @@ class SkipAccessibilityService : AccessibilityService() {
         actionExecutor = ActionExecutor(this)
         floatingButton = FloatingCaptureButton(this, onClick = ::captureSnapshot)
 
+        // 加载规则。放在引擎线程上执行，保证之后的事件处理时规则已经就绪
+        scope.launch {
+            ruleRepository.load()
+            diagnostics.add("已加载 ${ruleRepository.allApps().size} 个 App 的规则" +
+                ruleRepository.problems.takeIf { it.isNotEmpty() }?.let { "，问题：$it" }.orEmpty())
+        }
+
         // 订阅"显示快照按钮"设置：用户在 App 里一拨开关，这里就显示或隐藏悬浮按钮
         mainScope.launch {
             settingsRepository.snapshotButtonEnabled.collect { enabled ->
                 if (enabled) floatingButton.show() else floatingButton.hide()
             }
         }
+        // 订阅白名单和兜底开关，改了立即生效
+        mainScope.launch { settingsRepository.whitelist.collect { whitelist = it } }
+        mainScope.launch { settingsRepository.fallbackEnabled.collect { fallbackEnabled = it } }
         Log.i(TAG, "跳过服务已启动")
     }
 
@@ -204,18 +228,114 @@ class SkipAccessibilityService : AccessibilityService() {
             ?.root?.packageName?.toString()
     }
 
-    /** 尝试在当前页面找到并点击"跳过" */
+    /** 尝试在当前页面找到并点击"跳过"：先按专属规则，规则没命中再走通用兜底 */
     private suspend fun trySkip(packageName: String) {
         if (!shouldHandle(packageName)) return
+        if (packageName in whitelist) return // 白名单：完全不处理
         if (verifyingPackage == packageName) return
-        // 节流：不在启动窗口期内就不看了（design.md 第 2 节"事件节流"）
-        if (!launchTracker.isInLaunchWindow(packageName)) return
+
+        // 这个 App 的专属规则（没有或被停用则为 null）
+        val appRules = ruleRepository.rulesFor(packageName)?.takeIf { it.enabled }
+        val ruleWindowMs = appRules?.let(ruleMatcher::maxWindowMs) ?: 0L
+        val fallbackWindowMs = if (fallbackEnabled) LaunchTracker.DEFAULT_LAUNCH_WINDOW_MS else 0L
+        // 节流：规则和兜底都已过了生效时间，就不看了（design.md 第 2 节"事件节流"）
+        if (!launchTracker.isInLaunchWindow(packageName, maxOf(ruleWindowMs, fallbackWindowMs))) return
 
         // rootInActiveWindow：当前活动窗口的根节点，也就是整棵控件树的入口
         val root = rootInActiveWindow ?: return
         // 事件到达后窗口可能已经切走了，确认还是同一个 App
         if (root.packageName?.toString() != packageName) return
 
+        if (appRules != null && tryRules(packageName, appRules, root)) return
+        if (fallbackEnabled && launchTracker.isInLaunchWindow(packageName, fallbackWindowMs)) {
+            tryFallback(packageName, root)
+        }
+    }
+
+    /**
+     * 按专属规则处理（design.md 第 6 节）。
+     * @return 是否已有规则命中（命中后不再走通用兜底，哪怕因为防抖这次没点）
+     */
+    private suspend fun tryRules(packageName: String, app: AppRules, root: AccessibilityNodeInfo): Boolean {
+        val startedAt = SystemClock.uptimeMillis()
+        ruleCounter.syncLaunch(launchTracker.launchCount)
+        val screen = Rect().also(root::getBoundsInScreen)
+        val decision = ruleMatcher.match(
+            app = app,
+            activity = launchTracker.currentActivity,
+            elapsedSinceLaunchMs = launchTracker.elapsedSinceLaunchMs(),
+            page = ServicePageQuery(root),
+            screenWidth = screen.width(),
+            screenHeight = screen.height(),
+            clicksSoFar = ruleCounter::count,
+        ) ?: return false
+
+        val rule = decision.rule
+        if (!debouncer.tryAcquire("$packageName|${rule.id}")) return true
+        ruleCounter.increment(rule.id)
+
+        exclusiveClick(packageName) {
+            val activity = launchTracker.currentActivity
+            val shake = NodeFinder.containsAnyKeyword(root, FallbackConfig.SHAKE_QUERIES, FallbackConfig.SHAKE_KEYWORDS)
+            val searchMs = SystemClock.uptimeMillis() - startedAt
+
+            when (decision) {
+                is RuleDecision.ClickNode -> {
+                    val node = decision.target.handle
+                    val bounds = decision.target.info.bounds
+                    val label = decision.target.info.label ?: decision.matchedBy
+                    val outcome = when (rule.clickBy) {
+                        // 规则指定用手势：直接模拟手指点击，不先试点控件（省掉无效点击后的等待）
+                        ClickBy.GESTURE -> actionExecutor.tap(Rect().also(node::getBoundsInScreen), ActionExecutor.DEFAULT_TAP)
+                            .let { if (it == GestureResult.COMPLETED) ActionExecutor.ClickOutcome(ClickMethod.GESTURE, it) else null }
+                        ClickBy.NODE -> actionExecutor.clickNodeOnly(node)
+                        null -> actionExecutor.click(node)
+                    }
+                    val elapsed = launchTracker.elapsedSinceLaunchMs()
+                    diagnostics.add(
+                        "规则 ${rule.id} 命中「$label」$bounds（${decision.matchedBy}）打开后${elapsed}ms 查找${searchMs}ms " +
+                            "→ ${outcome?.let { "${it.method}${it.gestureResult?.let { r -> "(${r.label})" } ?: ""}" } ?: "点击失败"}",
+                    )
+                    if (outcome == null) return@exclusiveClick null
+                    Log.i(TAG, "规则 ${rule.id} 已点击 $packageName「$label」，方式=${outcome.method}，打开后 ${elapsed}ms，查找 ${searchMs}ms")
+                    recordSkip(packageName, activity, rule.id, decision.matchedBy, label, outcome.method, shake, elapsed)
+                    // 指定只点控件时不做手势重试；其他情况点完检查，无效就换方式重试
+                    if (rule.clickBy == ClickBy.NODE) {
+                        null
+                    } else {
+                        val expected = decision.target.info.label
+                        suspend { verifyClick(packageName, activity, rule.id, node, expected, shake) }
+                    }
+                }
+
+                is RuleDecision.TapPosition -> {
+                    val result = actionExecutor.tapAt(decision.x, decision.y)
+                    val elapsed = launchTracker.elapsedSinceLaunchMs()
+                    diagnostics.add("规则 ${rule.id} 点击坐标(${decision.x},${decision.y}) 打开后${elapsed}ms → ${result.label}")
+                    if (result == GestureResult.COMPLETED) {
+                        recordSkip(
+                            packageName, activity, rule.id, "position", "坐标(${decision.x},${decision.y})",
+                            ClickMethod.TAP_POSITION, shake, elapsed,
+                        )
+                    }
+                    null
+                }
+
+                is RuleDecision.Back -> {
+                    // performGlobalAction：执行系统级操作，这里相当于用户按了一下返回键
+                    val ok = performGlobalAction(GLOBAL_ACTION_BACK)
+                    val elapsed = launchTracker.elapsedSinceLaunchMs()
+                    diagnostics.add("规则 ${rule.id} 按返回键 打开后${elapsed}ms → ${if (ok) "成功" else "失败"}")
+                    if (ok) recordSkip(packageName, activity, rule.id, "back", "返回键", ClickMethod.BACK, shake, elapsed)
+                    null
+                }
+            }
+        }
+        return true
+    }
+
+    /** 通用关键词兜底（design.md 第 2 节） */
+    private suspend fun tryFallback(packageName: String, root: AccessibilityNodeInfo) {
         val startedAt = SystemClock.uptimeMillis()
 
         // 1. 快速路径：让目标 App 自己按文字搜索。
@@ -257,12 +377,7 @@ class SkipAccessibilityService : AccessibilityService() {
         // 放进去会被当成两个不同的按钮各点一次（M3 腾讯视频诊断日志里出现过）
         if (!debouncer.tryAcquire("$packageName|$RULE_FALLBACK")) return
 
-        // 从现在起到"检查与重试"结束，这个 App 的其他事件不再触发点击。
-        // 必须在任何挂起操作（写数据库等）之前设置：挂起期间引擎线程会去处理排队的事件，
-        // 如果那时标记还没设置，排队的事件就会抢着再点一次（同样是 M3 腾讯视频日志里的问题）
-        verifyingPackage = packageName
-        var handedOverToVerify = false
-        try {
+        exclusiveClick(packageName) {
             val activity = launchTracker.currentActivity
 
             // 检测"摇一摇"类文字只为记日志。快速路径没查过的话，点击前补查一次（点完页面就变了）。
@@ -279,26 +394,44 @@ class SkipAccessibilityService : AccessibilityService() {
             )
             if (outcome == null) {
                 Log.w(TAG, "找到了跳过按钮但点击失败：$packageName / ${match.matchedText}")
-                return
+                return@exclusiveClick null
             }
             Log.i(
                 TAG,
                 "已跳过 $packageName「${match.matchedText}」，方式=${outcome.method}，打开后 ${elapsed}ms，" +
                     "查找耗时 ${searchMs}ms（$path），摇一摇=$shake",
             )
-            recordSkip(packageName, activity, match.keyword, match.matchedText, outcome.method, shake, elapsed)
+            recordSkip(packageName, activity, RULE_FALLBACK, match.keyword, match.matchedText, outcome.method, shake, elapsed)
 
             // 点完检查一下是否真的生效，没生效就换方式重试
+            suspend { verifyClick(packageName, activity, RULE_FALLBACK, target.node, match.keyword, shake) }
+        }
+
+    }
+
+    /**
+     * 在"独占"状态下执行一次点击：从现在起到"检查与重试"结束，这个 App 的其他事件不再触发点击。
+     *
+     * 标记必须在任何挂起操作（写数据库等）之前设置：挂起期间引擎线程会去处理排队的事件，
+     * 如果那时标记还没设置，排队的事件就会抢着再点一次（M3 腾讯视频诊断日志里出现过）。
+     *
+     * @param action 执行点击并记录；返回点击后要做的检查任务，不需要检查时返回 null
+     */
+    private suspend fun exclusiveClick(packageName: String, action: suspend () -> (suspend () -> Unit)?) {
+        verifyingPackage = packageName
+        var handedOver = false
+        try {
+            val verify = action() ?: return
             scope.launch {
                 try {
-                    verifyClick(packageName, activity, target.node, match.keyword, shake)
+                    verify()
                 } finally {
                     if (verifyingPackage == packageName) verifyingPackage = null
                 }
             }
-            handedOverToVerify = true
+            handedOver = true
         } finally {
-            if (!handedOverToVerify && verifyingPackage == packageName) verifyingPackage = null
+            if (!handedOver && verifyingPackage == packageName) verifyingPackage = null
         }
     }
 
@@ -306,12 +439,15 @@ class SkipAccessibilityService : AccessibilityService() {
      * 点击后检查：每隔一会儿看一次，如果按钮还在，说明刚才的点击没生效
      * （有的广告 SDK 只响应真实触摸，M3 腾讯视频快照里遇到过），
      * 就换一种模拟手指点击的方式（按住时长、位置不同）再点，最多重试 [ActionExecutor.RETRY_TAPS] 次。
+     *
+     * @param expectedText 按钮上应有的文字；为 null 时（例如按 view id 匹配的图片按钮）只检查控件是否还在
      */
     private suspend fun verifyClick(
         packageName: String,
         activity: String?,
+        ruleId: String,
         node: AccessibilityNodeInfo,
-        keyword: String,
+        expectedText: String?,
         shakeDetected: Boolean,
     ) {
         for ((index, style) in ActionExecutor.RETRY_TAPS.withIndex()) {
@@ -323,8 +459,9 @@ class SkipAccessibilityService : AccessibilityService() {
                 diagnostics.add("按钮已消失，第${index}次重试后生效 $packageName")
                 return
             }
-            val label = (node.text ?: node.contentDescription)?.toString() ?: return
-            if (!label.contains(keyword, ignoreCase = true)) return
+            val label = (node.text ?: node.contentDescription)?.toString()
+            // 文字变了，说明已经不是原来的按钮了（倒计时数字的变化不算，"跳过 5"→"跳过 4" 仍是同一个按钮）
+            if (expectedText != null && !sameButtonText(label, expectedText)) return
 
             val rect = Rect().also(node::getBoundsInScreen)
             val result = actionExecutor.tap(rect, style)
@@ -332,7 +469,10 @@ class SkipAccessibilityService : AccessibilityService() {
             diagnostics.add("按钮仍在，第${index + 1}次重试 $style → ${result.label}，打开后${elapsed}ms")
             Log.i(TAG, "点击后按钮仍在，第${index + 1}次重试（$style）：$packageName「$label」→ ${result.label}")
             if (result == GestureResult.COMPLETED) {
-                recordSkip(packageName, activity, keyword, label, ClickMethod.GESTURE_RETRY, shakeDetected, elapsed)
+                recordSkip(
+                    packageName, activity, ruleId, expectedText ?: "", label ?: "", ClickMethod.GESTURE_RETRY,
+                    shakeDetected, elapsed,
+                )
             }
         }
         delay(VERIFY_DELAY_MS)
@@ -340,9 +480,17 @@ class SkipAccessibilityService : AccessibilityService() {
         diagnostics.add(if (stillThere) "重试用完，按钮仍在 $packageName" else "按钮已消失，最后一次重试后生效 $packageName")
     }
 
+    /** 去掉数字和空白后比较，忽略倒计时的变化 */
+    private fun sameButtonText(label: String?, expected: String): Boolean {
+        if (label == null) return false
+        fun String.core() = filterNot { it.isDigit() || it.isWhitespace() }
+        return label.core().contains(expected.core(), ignoreCase = true)
+    }
+
     private suspend fun recordSkip(
         packageName: String,
         activity: String?,
+        ruleId: String,
         keyword: String,
         matchedText: String,
         method: ClickMethod,
@@ -354,7 +502,7 @@ class SkipAccessibilityService : AccessibilityService() {
                 timestamp = System.currentTimeMillis(),
                 packageName = packageName,
                 activityName = activity,
-                ruleId = RULE_FALLBACK,
+                ruleId = ruleId,
                 matchedKeyword = keyword,
                 matchedText = matchedText,
                 clickMethod = method.name,

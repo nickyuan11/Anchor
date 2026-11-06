@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -36,7 +37,28 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { it[KEY_SNAPSHOT_BUTTON] = enabled }
     }
 
+    /** 通用关键词兜底是否开启，默认开启（design.md 第 2 节"这个功能用户可以关闭"） */
+    val fallbackEnabled: Flow<Boolean> =
+        dataStore.data.map { it[KEY_FALLBACK] ?: true }
+
+    suspend fun setFallbackEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_FALLBACK] = enabled }
+    }
+
+    /** 白名单：这些 App 完全不处理（包名集合） */
+    val whitelist: Flow<Set<String>> =
+        dataStore.data.map { it[KEY_WHITELIST] ?: emptySet() }
+
+    suspend fun setWhitelisted(packageName: String, whitelisted: Boolean) {
+        dataStore.edit {
+            val current = it[KEY_WHITELIST] ?: emptySet()
+            it[KEY_WHITELIST] = if (whitelisted) current + packageName else current - packageName
+        }
+    }
+
     private companion object {
         val KEY_SNAPSHOT_BUTTON = booleanPreferencesKey("snapshot_button_enabled")
+        val KEY_FALLBACK = booleanPreferencesKey("fallback_enabled")
+        val KEY_WHITELIST = stringSetPreferencesKey("whitelist")
     }
 }

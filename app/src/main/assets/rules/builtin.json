@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "packageName": "com.tencent.qqlive",
+      "name": "腾讯视频",
+      "enabled": true,
+      "rules": [
+        {
+          "id": "qqlive-splash-skip",
+          "type": "splash",
+          "activities": ["*"],
+          "matchWindowMs": 8000,
+          "condition": { "textExists": "广告" },
+          "match": [
+            { "text": "跳过", "textMatch": "contains" }
+          ],
+          "action": "click",
+          "clickBy": "gesture",
+          "maxClicks": 1
+        }
+      ]
+    },
+    {
+      "packageName": "com.qiyi.video",
+      "name": "爱奇艺",
+      "enabled": true,
+      "rules": [
+        {
+          "id": "iqiyi-splash-close",
+          "type": "splash",
+          "activities": ["*"],
+          "matchWindowMs": 8000,
+          "condition": { "textExists": "第三方应用" },
+          "match": [
+            { "text": "关闭", "textMatch": "equals" },
+            { "text": "跳过", "textMatch": "contains" }
+          ],
+          "action": "click",
+          "maxClicks": 1
+        }
+      ]
+    }
+  ]
+}

@@ -34,6 +34,10 @@ class LaunchTracker(
 
     private var launchedAt: Long = 0L
 
+    /** 第几次"打开 App"，每次切换前台 App 加 1。用来判断"还是不是同一次打开" */
+    var launchCount: Long = 0L
+        private set
+
     /**
      * 收到"窗口状态变化"（换页面）事件时调用。
      *
@@ -54,15 +58,19 @@ class LaunchTracker(
         if (isNewLaunch) {
             foregroundPackage = packageName
             launchedAt = clock()
+            launchCount++
         }
         // 查不到 Activity 名时：换了 App 就清空；同一个 App 内保持原来的页面名
         if (activityName != null || isNewLaunch) currentActivity = activityName
         return isNewLaunch
     }
 
-    /** 这个包是否是前台 App，并且处于启动窗口期内 */
-    fun isInLaunchWindow(packageName: String): Boolean =
-        packageName == foregroundPackage && elapsedSinceLaunchMs() <= launchWindowMs
+    /**
+     * 这个包是否是前台 App，并且处于启动窗口期内。
+     * @param windowMs 窗口期长度；有专属规则的 App 可以用规则里的 matchWindowMs
+     */
+    fun isInLaunchWindow(packageName: String, windowMs: Long = launchWindowMs): Boolean =
+        packageName == foregroundPackage && elapsedSinceLaunchMs() <= windowMs
 
     /** 距离前台 App 打开过了多少毫秒 */
     fun elapsedSinceLaunchMs(): Long = clock() - launchedAt

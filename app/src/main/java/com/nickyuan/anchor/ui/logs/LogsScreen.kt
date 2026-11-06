@@ -124,9 +124,11 @@ private fun LogRow(item: SkipLogItem) {
                 text = "「${item.matchedText}」· ${item.clickMethod} · 打开后 ${item.elapsedMs} ms",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            item.pageName?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(
+                listOfNotNull(item.ruleLabel, item.pageName).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -137,8 +139,8 @@ private fun LogsContentPreview() {
     AnchorTheme {
         LogsContent(
             logs = listOf(
-                SkipLogItem(1, "11-06 15:30:12", "示例 App", "SplashActivity", "跳过 5", "点击控件", true, 420),
-                SkipLogItem(2, "11-06 15:28:40", "另一个 App", null, "Skip", "模拟手势", false, 1310),
+                SkipLogItem(1, "11-06 15:30:12", "示例 App", "SplashActivity", "跳过 5", "点击控件", "规则 demo-skip", true, 420),
+                SkipLogItem(2, "11-06 15:28:40", "另一个 App", null, "Skip", "模拟手势", "通用兜底", false, 1310),
             ),
             onBack = {},
             onClearAll = {},

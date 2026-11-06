@@ -7,13 +7,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.nickyuan.anchor.ui.home.HomeScreen
 import com.nickyuan.anchor.ui.logs.LogsScreen
+import com.nickyuan.anchor.ui.settings.SettingsScreen
 import com.nickyuan.anchor.ui.snapshots.SnapshotsScreen
+import com.nickyuan.anchor.ui.whitelist.WhitelistScreen
 
 /** 页面路由名。每个页面有一个名字，跳转时按名字找，类似 Web 的 URL 路径 */
 private object Routes {
     const val HOME = "home"
     const val LOGS = "logs"
     const val SNAPSHOTS = "snapshots"
+    const val SETTINGS = "settings"
+    const val WHITELIST = "whitelist"
 }
 
 /**
@@ -27,6 +31,7 @@ fun AnchorNavHost(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 onOpenLogs = { navController.navigate(Routes.LOGS) },
                 onOpenSnapshots = { navController.navigate(Routes.SNAPSHOTS) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(Routes.LOGS) {
@@ -34,6 +39,15 @@ fun AnchorNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.SNAPSHOTS) {
             SnapshotsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenWhitelist = { navController.navigate(Routes.WHITELIST) },
+            )
+        }
+        composable(Routes.WHITELIST) {
+            WhitelistScreen(onBack = { navController.popBackStack() })
         }
     }
 }

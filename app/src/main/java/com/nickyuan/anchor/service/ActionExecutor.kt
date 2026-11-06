@@ -17,6 +17,12 @@ enum class ClickMethod(val label: String) {
 
     /** 第一次点击后按钮还在（有些广告只认真实触摸），改用模拟手势又点了一次 */
     GESTURE_RETRY("点击无效，改用模拟手势"),
+
+    /** 规则指定的屏幕坐标点击 */
+    TAP_POSITION("点击坐标"),
+
+    /** 规则指定的返回键 */
+    BACK("返回键"),
 }
 
 /** 模拟手势的执行结果 */
@@ -49,12 +55,22 @@ class ActionExecutor(private val service: AccessibilityService) {
     /** 一次点击尝试的结果 */
     data class ClickOutcome(val method: ClickMethod, val gestureResult: GestureResult? = null)
 
-    /** @return 成功时返回所用的方式，全部失败返回 null */
+    /** 依次尝试三种方式。成功时返回所用的方式，全部失败返回 null */
     suspend fun click(node: AccessibilityNodeInfo): ClickOutcome? {
+        clickNodeOnly(node)?.let { return it }
+        val result = tap(Rect().also(node::getBoundsInScreen), DEFAULT_TAP)
+        return if (result == GestureResult.COMPLETED) ClickOutcome(ClickMethod.GESTURE, result) else null
+    }
+
+    /** 在屏幕坐标 (x, y) 处模拟一次点击 */
+    suspend fun tapAt(x: Int, y: Int, durationMs: Long = DEFAULT_TAP.durationMs): GestureResult =
+        tap(Rect(x, y, x + 1, y + 1), TapStyle(0f, 0f, durationMs))
+
+    /** 只用前两种方式（点控件本身、点可点击的父控件），不模拟手势 */
+    fun clickNodeOnly(node: AccessibilityNodeInfo): ClickOutcome? {
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             return ClickOutcome(ClickMethod.NODE)
         }
-
         var parent = node.parent
         var depth = 0
         while (parent != null && depth < MAX_PARENT_DEPTH) {
@@ -64,9 +80,7 @@ class ActionExecutor(private val service: AccessibilityService) {
             parent = parent.parent
             depth++
         }
-
-        val result = tap(Rect().also(node::getBoundsInScreen), DEFAULT_TAP)
-        return if (result == GestureResult.COMPLETED) ClickOutcome(ClickMethod.GESTURE, result) else null
+        return null
     }
 
     /**

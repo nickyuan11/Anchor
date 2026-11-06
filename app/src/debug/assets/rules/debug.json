@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "packageName": "com.nickyuan.anchor",
+      "name": "模拟广告（仅 debug 包）",
+      "enabled": true,
+      "rules": [
+        {
+          "id": "debug-fake-splash",
+          "type": "splash",
+          "activities": ["com.nickyuan.anchor.debug.FakeSplashAdActivity"],
+          "matchWindowMs": 6000,
+          "condition": { "textExists": "摇一摇" },
+          "match": [
+            { "text": "跳过", "textMatch": "contains" }
+          ],
+          "action": "click",
+          "clickBy": "gesture",
+          "maxClicks": 1
+        }
+      ]
+    }
+  ]
+}

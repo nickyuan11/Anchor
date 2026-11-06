@@ -27,6 +27,8 @@ data class SkipLogItem(
     val pageName: String?,
     val matchedText: String,
     val clickMethod: String,
+    /** 命中的是哪条规则："通用兜底" 或 "规则 xxx" */
+    val ruleLabel: String,
     val shakeDetected: Boolean,
     val elapsedMs: Long,
 )
@@ -66,6 +68,7 @@ class LogsViewModel @Inject constructor(
             pageName = activityName?.substringAfterLast('.'),
             matchedText = matchedText,
             clickMethod = runCatching { ClickMethod.valueOf(clickMethod).label }.getOrDefault(clickMethod),
+            ruleLabel = if (ruleId == "fallback") "通用兜底" else "规则 $ruleId",
             shakeDetected = shakeDetected,
             elapsedMs = elapsedSinceLaunchMs,
         )

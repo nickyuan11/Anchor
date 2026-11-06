@@ -44,6 +44,7 @@ import com.nickyuan.anchor.util.AccessibilityUtils
 fun HomeScreen(
     onOpenLogs: () -> Unit,
     onOpenSnapshots: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -63,6 +64,7 @@ fun HomeScreen(
         snapshotButtonEnabled = snapshotButtonEnabled,
         onSnapshotButtonChange = viewModel::setSnapshotButtonEnabled,
         onOpenSnapshots = onOpenSnapshots,
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -75,6 +77,7 @@ private fun HomeContent(
     snapshotButtonEnabled: Boolean,
     onSnapshotButtonChange: (Boolean) -> Unit,
     onOpenSnapshots: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Scaffold { innerPadding ->
         Column(
@@ -97,6 +100,9 @@ private fun HomeContent(
 
             OutlinedButton(onClick = onOpenLogs, modifier = Modifier.fillMaxWidth()) {
                 Text("跳过记录")
+            }
+            OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                Text("设置（兜底开关、白名单）")
             }
             Spacer(Modifier.height(16.dp))
 
@@ -193,6 +199,7 @@ private fun HomeContentPreview() {
             snapshotButtonEnabled = false,
             onSnapshotButtonChange = {},
             onOpenSnapshots = {},
+            onOpenSettings = {},
         )
     }
 }

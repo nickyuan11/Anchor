@@ -89,6 +89,23 @@ class LaunchTrackerTest {
     }
 
     @Test
+    fun `打开编号每次打开加一，同一个 App 内不变`() {
+        tracker.onWindowStateChanged("com.a", "com.a.Splash")
+        tracker.onWindowStateChanged("com.a", "com.a.Main")
+        assertEquals(1, tracker.launchCount)
+        tracker.onWindowStateChanged("com.b", "com.b.Main")
+        assertEquals(2, tracker.launchCount)
+    }
+
+    @Test
+    fun `可以按规则指定的时长判断窗口期`() {
+        tracker.onWindowStateChanged("com.a", "com.a.Main")
+        now += 7_000
+        assertFalse(tracker.isInLaunchWindow("com.a"))
+        assertTrue(tracker.isInLaunchWindow("com.a", windowMs = 8_000))
+    }
+
+    @Test
     fun `一开始什么都不知道`() {
         assertNull(tracker.foregroundPackage)
         assertNull(tracker.currentActivity)
