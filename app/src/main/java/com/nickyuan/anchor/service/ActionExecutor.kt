@@ -11,6 +11,9 @@ enum class ClickMethod(val label: String) {
     NODE("点击控件"),
     PARENT("点击父控件"),
     GESTURE("模拟手势"),
+
+    /** 第一次点击后按钮还在（有些广告只认真实触摸），改用模拟手势又点了一次 */
+    GESTURE_RETRY("点击无效，改用模拟手势"),
 }
 
 /**

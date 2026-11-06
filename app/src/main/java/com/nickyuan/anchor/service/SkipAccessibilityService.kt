@@ -11,6 +11,7 @@ import android.util.Log
 import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.content.pm.PackageInfoCompat
@@ -18,6 +19,7 @@ import com.nickyuan.anchor.data.SettingsRepository
 import com.nickyuan.anchor.data.SkipLogRepository
 import com.nickyuan.anchor.data.db.SkipLogEntity
 import com.nickyuan.anchor.engine.Debouncer
+import com.nickyuan.anchor.engine.FallbackConfig
 import com.nickyuan.anchor.engine.FallbackMatcher
 import com.nickyuan.anchor.engine.LaunchTracker
 import com.nickyuan.anchor.snapshot.AppSnapshot
@@ -171,36 +173,109 @@ class SkipAccessibilityService : AccessibilityService() {
         // 事件到达后窗口可能已经切走了，确认还是同一个 App
         if (root.packageName?.toString() != packageName) return
 
-        val scan = NodeFinder.scan(root, fallbackMatcher.keywords)
-        if (scan.candidates.isEmpty()) return
+        val startedAt = SystemClock.uptimeMillis()
+
+        // 1. 快速路径：让目标 App 自己按文字搜索
+        var candidates = NodeFinder.findByText(root, fallbackMatcher.allKeywords)
+        // 页面上找到的广告特征文字；null 表示还没检查过
+        var markers: Set<String>? = null
+        var path = "快速"
+
+        // 2. 搜不到时完整遍历（兼容不支持按文字搜索的界面），顺便收集广告特征文字
+        if (candidates.isEmpty()) {
+            val scan = NodeFinder.scan(root, fallbackMatcher.allKeywords, fallbackMatcher.adMarkers)
+            candidates = scan.candidates
+            markers = scan.foundMarkers
+            path = "完整遍历"
+        }
+        if (candidates.isEmpty()) {
+            Log.v(TAG, "$packageName 未找到候选（$path，${SystemClock.uptimeMillis() - startedAt}ms）")
+            return
+        }
+
+        // 只有出现了"关闭"这类有条件的候选，才需要查广告特征文字
+        val infos = candidates.map { it.info }
+        if (markers == null && fallbackMatcher.hasConditionalCandidate(infos)) {
+            markers = NodeFinder.findAnyText(root, fallbackMatcher.adMarkers)
+        }
 
         // 用根节点（整个窗口）的大小作为屏幕尺寸
         val screen = Rect().also(root::getBoundsInScreen)
         val match = fallbackMatcher.findTarget(
-            scan.candidates.map { it.info }, screen.width(), screen.height(),
+            infos, screen.width(), screen.height(), adMarkersPresent = !markers.isNullOrEmpty(),
         ) ?: return
-        val target = scan.candidates.first { it.info === match.node }
+        val target = candidates.first { it.info === match.node }
 
         val activity = launchTracker.currentActivity
         if (!debouncer.tryAcquire("$packageName|$activity|$RULE_FALLBACK")) return
+
+        // 检测"摇一摇"类文字只为记日志。快速路径没查过的话，点击前补查一次（点完页面就变了）
+        val shakeDetected = (markers ?: NodeFinder.findAnyText(root, FallbackConfig.SHAKE_KEYWORDS))
+            .any { it in FallbackConfig.SHAKE_KEYWORDS }
 
         val method = actionExecutor.click(target.node) ?: run {
             Log.w(TAG, "找到了跳过按钮但点击失败：$packageName / ${match.matchedText}")
             return
         }
         val elapsed = launchTracker.elapsedSinceLaunchMs()
-        Log.i(TAG, "已跳过 $packageName「${match.matchedText}」，方式=$method，用时 ${elapsed}ms，摇一摇=${scan.shakeDetected}")
+        Log.i(
+            TAG,
+            "已跳过 $packageName「${match.matchedText}」，方式=$method，打开后 ${elapsed}ms，" +
+                "查找耗时 ${SystemClock.uptimeMillis() - startedAt}ms（$path），摇一摇=$shakeDetected",
+        )
+        recordSkip(packageName, activity, match.keyword, match.matchedText, method, shakeDetected, elapsed)
 
+        // 模拟手势已经是最后手段；其他方式点完要检查一下是否真的生效
+        if (method != ClickMethod.GESTURE) {
+            scope.launch { verifyClick(packageName, activity, target.node, match.keyword, shakeDetected) }
+        }
+    }
+
+    /**
+     * 点击后检查：等一会儿，如果按钮还在，说明这个按钮不认"替用户点击"
+     * （有的广告 SDK 只响应真实触摸，M3 腾讯视频快照里遇到过），改用模拟手指点击再点一次。
+     */
+    private suspend fun verifyClick(
+        packageName: String,
+        activity: String?,
+        node: AccessibilityNodeInfo,
+        keyword: String,
+        shakeDetected: Boolean,
+    ) {
+        delay(VERIFY_DELAY_MS) // 挂起等待，不占用引擎线程，期间其他事件照常处理
+        if (launchTracker.foregroundPackage != packageName) return
+        if (rootInActiveWindow?.packageName?.toString() != packageName) return
+        // refresh()：从目标 App 重新读取这个控件的最新状态；返回 false 表示控件已经不存在
+        if (!node.refresh() || !node.isVisibleToUser) return
+        val label = (node.text ?: node.contentDescription)?.toString() ?: return
+        if (!label.contains(keyword, ignoreCase = true)) return
+
+        val rect = Rect().also(node::getBoundsInScreen)
+        if (rect.isEmpty || !actionExecutor.tap(rect.exactCenterX(), rect.exactCenterY())) return
+        val elapsed = launchTracker.elapsedSinceLaunchMs()
+        Log.i(TAG, "点击后按钮仍在，已改用模拟手势重试：$packageName「$label」，打开后 ${elapsed}ms")
+        recordSkip(packageName, activity, keyword, label, ClickMethod.GESTURE_RETRY, shakeDetected, elapsed)
+    }
+
+    private suspend fun recordSkip(
+        packageName: String,
+        activity: String?,
+        keyword: String,
+        matchedText: String,
+        method: ClickMethod,
+        shakeDetected: Boolean,
+        elapsed: Long,
+    ) {
         skipLogRepository.record(
             SkipLogEntity(
                 timestamp = System.currentTimeMillis(),
                 packageName = packageName,
                 activityName = activity,
                 ruleId = RULE_FALLBACK,
-                matchedKeyword = match.keyword,
-                matchedText = match.matchedText,
+                matchedKeyword = keyword,
+                matchedText = matchedText,
                 clickMethod = method.name,
-                shakeDetected = scan.shakeDetected,
+                shakeDetected = shakeDetected,
                 elapsedSinceLaunchMs = elapsed,
             ),
         )
@@ -370,6 +445,8 @@ class SkipAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
+        /** 点击后等多久检查按钮是否还在 */
+        const val VERIFY_DELAY_MS = 1_000L
         const val JPEG_QUALITY = 85
         const val TAG = "SkipService"
         const val RULE_FALLBACK = "fallback"

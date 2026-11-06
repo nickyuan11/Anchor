@@ -1,8 +1,10 @@
 package com.nickyuan.anchor.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FallbackMatcherTest {
@@ -97,6 +99,43 @@ class FallbackMatcherTest {
         val big = node("跳过", cx = 980, cy = 120, width = 200, height = 90)
         val small = node("跳过", cx = 980, cy = 120, width = 120, height = 50)
         assertEquals(small, matcher.findTarget(listOf(big, small), w, h)!!.node)
+    }
+
+    // ---- 有条件的关键词"关闭"（爱奇艺开屏广告，屏幕 1200 x 2640） ----
+
+    @Test
+    fun `页面有广告特征时，右上角的关闭会被选中`() {
+        val close = node("关闭", cx = 1001, cy = 125, width = 265, height = 119)
+        val match = matcher.findTarget(listOf(close), 1200, 2640, adMarkersPresent = true)
+        assertEquals("关闭", match!!.keyword)
+    }
+
+    @Test
+    fun `页面没有广告特征时，关闭不点`() {
+        val close = node("关闭", cx = 1001, cy = 125, width = 265, height = 119)
+        assertNull(matcher.findTarget(listOf(close), 1200, 2640, adMarkersPresent = false))
+    }
+
+    @Test
+    fun `跳过和关闭同时存在时优先跳过`() {
+        val close = node("关闭", cx = 980, cy = 120, width = 100, height = 50)
+        val skip = node("跳过", cx = 980, cy = 2300, width = 160, height = 70)
+        assertEquals(skip, matcher.findTarget(listOf(close, skip), w, h, adMarkersPresent = true)!!.node)
+    }
+
+    @Test
+    fun `只有关闭类候选时才需要检查广告特征`() {
+        assertTrue(matcher.hasConditionalCandidate(listOf(node("关闭", cx = 980, cy = 120))))
+        assertFalse(matcher.hasConditionalCandidate(listOf(node("跳过", cx = 980, cy = 120))))
+        // "跳过并关闭"已经被明确关键词命中，不需要再查
+        assertFalse(matcher.hasConditionalCandidate(listOf(node("跳过并关闭", cx = 980, cy = 120))))
+    }
+
+    @Test
+    fun `关键词列表包含有条件的关闭，广告特征包含扭转手机`() {
+        assertTrue("关闭" in matcher.allKeywords)
+        assertTrue("扭转手机" in matcher.adMarkers)
+        assertTrue("翻转手机" in FallbackConfig.SHAKE_KEYWORDS)
     }
 
     @Test
