@@ -2,6 +2,7 @@ package com.nickyuan.anchor.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +16,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,7 +29,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nickyuan.anchor.R
 import com.nickyuan.anchor.debug.DebugPanel
 import com.nickyuan.anchor.ui.theme.AnchorTheme
@@ -37,8 +41,13 @@ import com.nickyuan.anchor.util.AccessibilityUtils
  * 主页：显示跳过服务是否在运行，提供"去开启"和"跳过记录"入口。
  */
 @Composable
-fun HomeScreen(onOpenLogs: () -> Unit) {
+fun HomeScreen(
+    onOpenLogs: () -> Unit,
+    onOpenSnapshots: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
+    val snapshotButtonEnabled by viewModel.snapshotButtonEnabled.collectAsStateWithLifecycle()
     var serviceEnabled by remember { mutableStateOf(AccessibilityUtils.isSkipServiceEnabled(context)) }
 
     // 每次页面回到前台（比如从系统设置返回）都重新检查一次服务状态
@@ -51,6 +60,9 @@ fun HomeScreen(onOpenLogs: () -> Unit) {
         serviceEnabled = serviceEnabled,
         onEnableService = { AccessibilityUtils.openAccessibilitySettings(context) },
         onOpenLogs = onOpenLogs,
+        snapshotButtonEnabled = snapshotButtonEnabled,
+        onSnapshotButtonChange = viewModel::setSnapshotButtonEnabled,
+        onOpenSnapshots = onOpenSnapshots,
     )
 }
 
@@ -60,6 +72,9 @@ private fun HomeContent(
     serviceEnabled: Boolean,
     onEnableService: () -> Unit,
     onOpenLogs: () -> Unit,
+    snapshotButtonEnabled: Boolean,
+    onSnapshotButtonChange: (Boolean) -> Unit,
+    onOpenSnapshots: () -> Unit,
 ) {
     Scaffold { innerPadding ->
         Column(
@@ -83,6 +98,15 @@ private fun HomeContent(
             OutlinedButton(onClick = onOpenLogs, modifier = Modifier.fillMaxWidth()) {
                 Text("跳过记录")
             }
+            Spacer(Modifier.height(16.dp))
+
+            SnapshotCard(
+                serviceEnabled = serviceEnabled,
+                buttonEnabled = snapshotButtonEnabled,
+                onButtonChange = onSnapshotButtonChange,
+                onOpenSnapshots = onOpenSnapshots,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(32.dp))
 
             // 调试面板：debug 包里显示模拟广告入口和测试结果，release 包里是空的
@@ -122,10 +146,53 @@ private fun ServiceStatusCard(
     }
 }
 
+/** 页面快照：悬浮按钮开关 + 快照列表入口 */
+@Composable
+private fun SnapshotCard(
+    serviceEnabled: Boolean,
+    buttonEnabled: Boolean,
+    onButtonChange: (Boolean) -> Unit,
+    onOpenSnapshots: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("显示快照按钮", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = if (serviceEnabled) "屏幕边上会出现 📷，遇到没跳过的广告点一下" else "需要先开启跳过服务",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = buttonEnabled, onCheckedChange = onButtonChange)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "快照包含当时屏幕上的文字和截图，只保存在本机，只有你主动分享时才会发出去。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onOpenSnapshots, modifier = Modifier.fillMaxWidth()) {
+                Text("页面快照")
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun HomeContentPreview() {
     AnchorTheme {
-        HomeContent(serviceEnabled = false, onEnableService = {}, onOpenLogs = {})
+        HomeContent(
+            serviceEnabled = false,
+            onEnableService = {},
+            onOpenLogs = {},
+            snapshotButtonEnabled = false,
+            onSnapshotButtonChange = {},
+            onOpenSnapshots = {},
+        )
     }
 }

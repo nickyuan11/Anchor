@@ -42,6 +42,20 @@
         </activity>
 
         <!--
+          FileProvider：把 App 私有目录里的文件，以临时授权链接（content:// 开头）的形式分享给微信等其他 App。
+          Android 7.0 起不允许直接把文件路径交给别的 App。可分享的目录见 res/xml/file_paths.xml。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!--
           无障碍服务。
           - permission=BIND_ACCESSIBILITY_SERVICE：只有系统能绑定（启动）它，其他 App 不行
           - meta-data 指向 res/xml/accessibility_config.xml，即服务的能力配置

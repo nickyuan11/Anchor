@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 允许对外分享的目录。
+  只开放 App 私有目录下的 snapshots/ 子目录（快照 zip 所在），其他文件不会被分享出去。
+-->
+<paths>
+    <files-path name="snapshots" path="snapshots/" />
+</paths>

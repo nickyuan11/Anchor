@@ -23,6 +23,10 @@ class SkipLogRepository @Inject constructor(
         dao.insert(entry)
     }
 
+    /** 某个 App 最近的几条记录，附在页面快照里方便排查 */
+    suspend fun recentFor(packageName: String, limit: Int = 20): List<SkipLogEntity> =
+        dao.recentFor(packageName, limit)
+
     suspend fun clear() = dao.clear()
 
     private companion object {

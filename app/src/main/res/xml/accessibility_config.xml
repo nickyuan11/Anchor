@@ -4,6 +4,7 @@
   - accessibilityEventTypes：只订阅"换页面"和"页面内容变化"两类事件
   - canRetrieveWindowContent：允许读取页面上的控件（节点树）
   - canPerformGestures：允许模拟手指点击，作为点不中控件时的最后手段
+  - canTakeScreenshot：允许截屏（Android 11+），页面快照工具使用
   - flagReportViewIds：读取控件的 view id（M4 的规则会用到）
   - flagRetrieveInteractiveWindows：可以读取所有可交互的窗口
   - flagIncludeNotImportantViews：连"不重要"的控件也报告，有些跳过按钮被标成了不重要
@@ -16,5 +17,6 @@
     android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="50" />

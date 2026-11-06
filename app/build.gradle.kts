@@ -2,6 +2,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
@@ -19,8 +20,8 @@ android {
         minSdk = 26
         // targetSdk：声明 App 已适配到哪个 Android 版本，系统据此决定启用哪些新行为
         targetSdk = 37
-        versionCode = 1          // 内部版本号，每次发版递增
-        versionName = "0.1.0"    // 给人看的版本号
+        versionCode = 3          // 内部版本号，每次发版递增（暂时与里程碑编号对应）
+        versionName = "0.3.0"    // 给人看的版本号
     }
 
     buildTypes {
@@ -71,6 +72,11 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // DataStore：保存开关等设置
+    implementation(libs.androidx.datastore.preferences)
+    // kotlinx.serialization：生成快照 JSON（M4 也用它解析规则文件）
+    implementation(libs.kotlinx.serialization.json)
 
     // 单元测试（在电脑上运行，不需要模拟器）
     testImplementation(libs.junit)

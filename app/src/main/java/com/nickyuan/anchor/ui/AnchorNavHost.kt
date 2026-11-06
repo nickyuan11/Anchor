@@ -7,11 +7,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.nickyuan.anchor.ui.home.HomeScreen
 import com.nickyuan.anchor.ui.logs.LogsScreen
+import com.nickyuan.anchor.ui.snapshots.SnapshotsScreen
 
 /** 页面路由名。每个页面有一个名字，跳转时按名字找，类似 Web 的 URL 路径 */
 private object Routes {
     const val HOME = "home"
     const val LOGS = "logs"
+    const val SNAPSHOTS = "snapshots"
 }
 
 /**
@@ -22,10 +24,16 @@ private object Routes {
 fun AnchorNavHost(navController: NavHostController = rememberNavController()) {
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
-            HomeScreen(onOpenLogs = { navController.navigate(Routes.LOGS) })
+            HomeScreen(
+                onOpenLogs = { navController.navigate(Routes.LOGS) },
+                onOpenSnapshots = { navController.navigate(Routes.SNAPSHOTS) },
+            )
         }
         composable(Routes.LOGS) {
             LogsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.SNAPSHOTS) {
+            SnapshotsScreen(onBack = { navController.popBackStack() })
         }
     }
 }

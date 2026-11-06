@@ -21,6 +21,9 @@ interface SkipLogDao {
     @Query("SELECT * FROM skip_log ORDER BY timestamp DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<SkipLogEntity>>
 
+    @Query("SELECT * FROM skip_log WHERE packageName = :packageName ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recentFor(packageName: String, limit: Int): List<SkipLogEntity>
+
     @Query("DELETE FROM skip_log")
     suspend fun clear()
 }
