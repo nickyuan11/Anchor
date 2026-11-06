@@ -31,9 +31,12 @@ data class Snapshot(
     val recentSkipLogs: List<SkipLogSnapshot>,
     /** zip 里是否带有 screenshot.jpg */
     val hasScreenshot: Boolean,
+    /** 服务内部最近的诊断日志（窗口变化、点击尝试、手势结果等），格式版本 2 起提供 */
+    val diagnostics: List<String> = emptyList(),
 ) {
     companion object {
-        const val FORMAT_VERSION = 1
+        /** 1：初版；2：增加 diagnostics */
+        const val FORMAT_VERSION = 2
     }
 }
 

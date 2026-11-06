@@ -12,6 +12,7 @@ import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.content.pm.PackageInfoCompat
@@ -30,6 +31,7 @@ import com.nickyuan.anchor.snapshot.Snapshot
 import com.nickyuan.anchor.snapshot.SnapshotCapturer
 import com.nickyuan.anchor.snapshot.SnapshotRepository
 import com.nickyuan.anchor.util.AppLabelProvider
+import com.nickyuan.anchor.util.DiagnosticsLog
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,7 @@ class SkipAccessibilityService : AccessibilityService() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var snapshotRepository: SnapshotRepository
     @Inject lateinit var appLabelProvider: AppLabelProvider
+    @Inject lateinit var diagnostics: DiagnosticsLog
 
     /**
      * limitedParallelism(1)：从后台线程池里"切"出一个同一时刻只运行一个任务的调度器，
@@ -92,6 +95,9 @@ class SkipAccessibilityService : AccessibilityService() {
 
     /** 缓存"某个类名是不是 Activity"的查询结果，避免重复查询 PackageManager */
     private val activityClassCache = HashMap<String, Boolean>()
+
+    /** 正在做"点击后检查与重试"的包名。期间这个 App 的其他事件不再触发新的点击，避免和重试互相干扰 */
+    private var verifyingPackage: String? = null
 
     // ---- 页面快照（M3） ----
     private lateinit var floatingButton: FloatingCaptureButton
@@ -132,6 +138,7 @@ class SkipAccessibilityService : AccessibilityService() {
                 if (!contentScanPending.compareAndSet(false, true)) return
                 scope.launch {
                     try {
+                        catchUpForeground(packageName)
                         trySkip(packageName)
                     } finally {
                         contentScanPending.set(false)
@@ -158,13 +165,49 @@ class SkipAccessibilityService : AccessibilityService() {
 
     private suspend fun onWindowStateChanged(packageName: String, className: String?) {
         val activity = className?.takeIf { isActivity(packageName, it) }
-        launchTracker.onWindowStateChanged(packageName, activity)
+        // 查不到 Activity 时，再看用户正在操作的窗口是不是属于这个 App（插件化 App 靠这一条识别）
+        val activeWindowPackage = if (activity == null) activeAppWindowPackage() else null
+        val isAppWindow = activity != null || activeWindowPackage == packageName
+        val isNewLaunch = launchTracker.onWindowStateChanged(packageName, activity, isAppWindow)
+
+        diagnostics.add(
+            "窗口变化 $packageName / $className" +
+                (if (activity != null) " [Activity]" else " [非Activity, 活动窗口=$activeWindowPackage]") +
+                when {
+                    isNewLaunch -> " → 新打开"
+                    isAppWindow -> " → 同一App"
+                    else -> " → 忽略"
+                },
+        )
         trySkip(packageName)
+    }
+
+    /**
+     * 补救：如果某个 App 打开时的"窗口变化"没被识别到，但它的内容变化事件来了，
+     * 而且用户正在操作的窗口确实属于它，就补记为一次打开。
+     * 只在包名和当前记录的前台 App 不一致时才查询，平时没有额外开销。
+     */
+    private fun catchUpForeground(packageName: String) {
+        if (packageName == launchTracker.foregroundPackage) return
+        if (activeAppWindowPackage() != packageName) return
+        if (launchTracker.onWindowStateChanged(packageName, null, isAppWindow = true)) {
+            diagnostics.add("内容变化补记打开 $packageName")
+        }
+    }
+
+    /** 当前用户正在操作的 App 窗口属于哪个包；不是 App 窗口（输入法、系统窗口等）时返回 null */
+    private fun activeAppWindowPackage(): String? {
+        val windowList = windows
+        if (windowList.isEmpty()) return rootInActiveWindow?.packageName?.toString()
+        return windowList
+            .firstOrNull { it.isActive && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            ?.root?.packageName?.toString()
     }
 
     /** 尝试在当前页面找到并点击"跳过" */
     private suspend fun trySkip(packageName: String) {
         if (!shouldHandle(packageName)) return
+        if (verifyingPackage == packageName) return
         // 节流：不在启动窗口期内就不看了（design.md 第 2 节"事件节流"）
         if (!launchTracker.isInLaunchWindow(packageName)) return
 
@@ -213,27 +256,39 @@ class SkipAccessibilityService : AccessibilityService() {
         val shakeDetected = (markers ?: NodeFinder.findAnyText(root, FallbackConfig.SHAKE_KEYWORDS))
             .any { it in FallbackConfig.SHAKE_KEYWORDS }
 
-        val method = actionExecutor.click(target.node) ?: run {
+        val searchMs = SystemClock.uptimeMillis() - startedAt
+        val outcome = actionExecutor.click(target.node)
+        val elapsed = launchTracker.elapsedSinceLaunchMs()
+        diagnostics.add(
+            "命中 $packageName「${match.matchedText}」${match.node.bounds} 打开后${elapsed}ms 查找${searchMs}ms($path) " +
+                "→ ${outcome?.let { "${it.method}${it.gestureResult?.let { r -> "(${r.label})" } ?: ""}" } ?: "点击失败"}",
+        )
+        if (outcome == null) {
             Log.w(TAG, "找到了跳过按钮但点击失败：$packageName / ${match.matchedText}")
             return
         }
-        val elapsed = launchTracker.elapsedSinceLaunchMs()
         Log.i(
             TAG,
-            "已跳过 $packageName「${match.matchedText}」，方式=$method，打开后 ${elapsed}ms，" +
-                "查找耗时 ${SystemClock.uptimeMillis() - startedAt}ms（$path），摇一摇=$shakeDetected",
+            "已跳过 $packageName「${match.matchedText}」，方式=${outcome.method}，打开后 ${elapsed}ms，" +
+                "查找耗时 ${searchMs}ms（$path），摇一摇=$shakeDetected",
         )
-        recordSkip(packageName, activity, match.keyword, match.matchedText, method, shakeDetected, elapsed)
+        recordSkip(packageName, activity, match.keyword, match.matchedText, outcome.method, shakeDetected, elapsed)
 
-        // 模拟手势已经是最后手段；其他方式点完要检查一下是否真的生效
-        if (method != ClickMethod.GESTURE) {
-            scope.launch { verifyClick(packageName, activity, target.node, match.keyword, shakeDetected) }
+        // 点完检查一下是否真的生效，没生效就换方式重试
+        verifyingPackage = packageName
+        scope.launch {
+            try {
+                verifyClick(packageName, activity, target.node, match.keyword, shakeDetected)
+            } finally {
+                if (verifyingPackage == packageName) verifyingPackage = null
+            }
         }
     }
 
     /**
-     * 点击后检查：等一会儿，如果按钮还在，说明这个按钮不认"替用户点击"
-     * （有的广告 SDK 只响应真实触摸，M3 腾讯视频快照里遇到过），改用模拟手指点击再点一次。
+     * 点击后检查：每隔一会儿看一次，如果按钮还在，说明刚才的点击没生效
+     * （有的广告 SDK 只响应真实触摸，M3 腾讯视频快照里遇到过），
+     * 就换一种模拟手指点击的方式（按住时长、位置不同）再点，最多重试 [ActionExecutor.RETRY_TAPS] 次。
      */
     private suspend fun verifyClick(
         packageName: String,
@@ -242,19 +297,30 @@ class SkipAccessibilityService : AccessibilityService() {
         keyword: String,
         shakeDetected: Boolean,
     ) {
-        delay(VERIFY_DELAY_MS) // 挂起等待，不占用引擎线程，期间其他事件照常处理
-        if (launchTracker.foregroundPackage != packageName) return
-        if (rootInActiveWindow?.packageName?.toString() != packageName) return
-        // refresh()：从目标 App 重新读取这个控件的最新状态；返回 false 表示控件已经不存在
-        if (!node.refresh() || !node.isVisibleToUser) return
-        val label = (node.text ?: node.contentDescription)?.toString() ?: return
-        if (!label.contains(keyword, ignoreCase = true)) return
+        for ((index, style) in ActionExecutor.RETRY_TAPS.withIndex()) {
+            delay(VERIFY_DELAY_MS) // 挂起等待，不占用引擎线程，期间其他事件照常处理
+            if (launchTracker.foregroundPackage != packageName) return
+            if (rootInActiveWindow?.packageName?.toString() != packageName) return
+            // refresh()：从目标 App 重新读取这个控件的最新状态；返回 false 表示控件已经不存在
+            if (!node.refresh() || !node.isVisibleToUser) {
+                diagnostics.add("按钮已消失，第${index}次重试后生效 $packageName")
+                return
+            }
+            val label = (node.text ?: node.contentDescription)?.toString() ?: return
+            if (!label.contains(keyword, ignoreCase = true)) return
 
-        val rect = Rect().also(node::getBoundsInScreen)
-        if (rect.isEmpty || !actionExecutor.tap(rect.exactCenterX(), rect.exactCenterY())) return
-        val elapsed = launchTracker.elapsedSinceLaunchMs()
-        Log.i(TAG, "点击后按钮仍在，已改用模拟手势重试：$packageName「$label」，打开后 ${elapsed}ms")
-        recordSkip(packageName, activity, keyword, label, ClickMethod.GESTURE_RETRY, shakeDetected, elapsed)
+            val rect = Rect().also(node::getBoundsInScreen)
+            val result = actionExecutor.tap(rect, style)
+            val elapsed = launchTracker.elapsedSinceLaunchMs()
+            diagnostics.add("按钮仍在，第${index + 1}次重试 $style → ${result.label}，打开后${elapsed}ms")
+            Log.i(TAG, "点击后按钮仍在，第${index + 1}次重试（$style）：$packageName「$label」→ ${result.label}")
+            if (result == GestureResult.COMPLETED) {
+                recordSkip(packageName, activity, keyword, label, ClickMethod.GESTURE_RETRY, shakeDetected, elapsed)
+            }
+        }
+        delay(VERIFY_DELAY_MS)
+        val stillThere = node.refresh() && node.isVisibleToUser
+        diagnostics.add(if (stillThere) "重试用完，按钮仍在 $packageName" else "按钮已消失，最后一次重试后生效 $packageName")
     }
 
     private suspend fun recordSkip(
@@ -358,6 +424,7 @@ class SkipAccessibilityService : AccessibilityService() {
                     windows = windowsSnapshot,
                     recentSkipLogs = logs,
                     hasScreenshot = screenshot != null,
+                    diagnostics = diagnostics.snapshot(),
                 )
                 snapshotRepository.save(snapshot, screenshot, capturedAt)
                 toast("已保存快照：${appSnapshot.appName}")

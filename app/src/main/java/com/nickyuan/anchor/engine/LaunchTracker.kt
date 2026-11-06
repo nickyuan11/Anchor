@@ -3,8 +3,12 @@ package com.nickyuan.anchor.engine
 /**
  * 跟踪"当前前台是哪个 App、哪个页面、什么时候打开的"。
  *
- * 只有"切换到某个 App 的 Activity（页面）"才算换了前台 App。
- * 悬浮按钮、弹窗、输入法、鸿蒙的手势导航条等非 Activity 窗口变化，一律不影响判断——
+ * 只有"切换到某个 App 的页面窗口"才算换了前台 App，判断依据（由服务提供）是满足其一：
+ * - 窗口类名能查到是这个 App 的 Activity；
+ * - 或者当前用户正在操作的窗口（活动窗口）就属于这个 App。
+ *   爱奇艺这类插件化 App 的页面查不到 Activity，靠这一条识别（M3 真机快照）。
+ *
+ * 悬浮按钮、输入法、鸿蒙的手势导航条等窗口不会成为活动窗口，它们的变化一律不影响判断——
  * 否则点一下 📷、弹一下键盘，就会被误认为"切到了另一个 App"（M3 真机快照里发现的问题）。
  *
  * 前台 App 的包名一变化，就认为这个 App "刚刚打开"，开始计时；
@@ -33,20 +37,26 @@ class LaunchTracker(
     /**
      * 收到"窗口状态变化"（换页面）事件时调用。
      *
-     * @param activityName 如果这个窗口是一个 Activity，传它的完整类名；
-     *        如果是弹窗、悬浮窗、输入法等非 Activity 窗口，传 null，此时什么都不改变
+     * @param activityName 如果这个窗口是一个 Activity，传它的完整类名；否则传 null
+     * @param isAppWindow 这个窗口是否是 App 的页面窗口（见类注释）。
+     *        为 false 时（弹窗、悬浮窗、输入法等）什么都不改变
      * @return 是否是一次新的 App 打开
      */
-    fun onWindowStateChanged(packageName: String, activityName: String?): Boolean {
+    fun onWindowStateChanged(
+        packageName: String,
+        activityName: String?,
+        isAppWindow: Boolean = activityName != null,
+    ): Boolean {
         if (packageName in ignoredPackages) return false
-        if (activityName == null) return false
+        if (!isAppWindow) return false
 
         val isNewLaunch = packageName != foregroundPackage
         if (isNewLaunch) {
             foregroundPackage = packageName
             launchedAt = clock()
         }
-        currentActivity = activityName
+        // 查不到 Activity 名时：换了 App 就清空；同一个 App 内保持原来的页面名
+        if (activityName != null || isNewLaunch) currentActivity = activityName
         return isNewLaunch
     }
 

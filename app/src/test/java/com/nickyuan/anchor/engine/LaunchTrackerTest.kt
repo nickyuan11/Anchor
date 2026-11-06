@@ -57,6 +57,23 @@ class LaunchTrackerTest {
     }
 
     @Test
+    fun `查不到 Activity 但活动窗口属于它（插件化 App）也算打开`() {
+        tracker.onWindowStateChanged("com.launcher", "com.launcher.Home")
+        now += 1_000
+        assertTrue(tracker.onWindowStateChanged("com.qiyi.video", null, isAppWindow = true))
+        assertEquals("com.qiyi.video", tracker.foregroundPackage)
+        assertNull(tracker.currentActivity)
+        assertTrue(tracker.isInLaunchWindow("com.qiyi.video"))
+    }
+
+    @Test
+    fun `同一个 App 内查不到 Activity 的窗口不清掉已知页面`() {
+        tracker.onWindowStateChanged("com.a", "com.a.Main")
+        assertFalse(tracker.onWindowStateChanged("com.a", null, isAppWindow = true))
+        assertEquals("com.a.Main", tracker.currentActivity)
+    }
+
+    @Test
     fun `其他 App 不在窗口期内`() {
         tracker.onWindowStateChanged("com.a", "com.a.Main")
         assertFalse(tracker.isInLaunchWindow("com.b"))
