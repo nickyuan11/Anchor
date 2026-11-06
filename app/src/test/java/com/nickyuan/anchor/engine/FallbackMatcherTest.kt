@@ -139,6 +139,23 @@ class FallbackMatcherTest {
     }
 
     @Test
+    fun `快速路径查询词去掉了被包含的冗余词`() {
+        assertEquals(listOf("跳过", "Skip", "关闭"), matcher.searchKeywords)
+    }
+
+    @Test
+    fun `广告特征里最常见的广告排在第一个`() {
+        assertEquals("广告", matcher.adMarkers.first())
+    }
+
+    @Test
+    fun `摇一摇的 3 个查询词能覆盖全部摇一摇关键词`() {
+        for (keyword in FallbackConfig.SHAKE_KEYWORDS) {
+            assertTrue(keyword, FallbackConfig.SHAKE_QUERIES.any { keyword.contains(it) })
+        }
+    }
+
+    @Test
     fun `屏幕尺寸异常时返回空`() {
         assertNull(matcher.findTarget(listOf(node("跳过", cx = 980, cy = 120)), 0, 0))
     }

@@ -13,8 +13,11 @@ data class FallbackConfig(
      * 来源：爱奇艺开屏广告的按钮写的是"关闭"（M3 真机快照）。
      */
     val conditionalKeywords: List<String> = listOf("关闭"),
-    /** 广告特征文字：页面上出现其中之一，才允许使用 [conditionalKeywords] */
-    val adMarkers: List<String> = listOf("广告", "跳转至第三方应用", "跳转第三方应用") + SHAKE_KEYWORDS,
+    /**
+     * 广告特征文字：页面上出现其中之一，才允许使用 [conditionalKeywords]。
+     * 快速路径按顺序查、查到一个就停，所以最常见的"广告"放最前面
+     */
+    val adMarkers: List<String> = listOf("广告") + SHAKE_KEYWORDS + listOf("跳转至第三方应用", "跳转第三方应用"),
     /** 文字最多几个字（去掉空格后）。排除"已跳过 3 个广告"这类长句子 */
     val maxTextLength: Int = 10,
     /** "角落"的横向范围：控件中心离左边或右边不超过屏幕宽度的这个比例 */
@@ -32,6 +35,12 @@ data class FallbackConfig(
          * 扭转、翻转手机来自腾讯视频、爱奇艺的真机快照，原理同摇一摇，只是用的是陀螺仪。
          */
         val SHAKE_KEYWORDS = listOf("摇一摇", "摇动手机", "扭动手机", "扭转手机", "翻转手机", "转动手机", "扭一扭")
+
+        /**
+         * 快速路径检测摇一摇时用的查询词：3 个短词就能覆盖上面全部 7 个关键词
+         * （"手机"覆盖所有"x动/x转手机"），查到后再用完整关键词核对，避免"手机号"之类误判
+         */
+        val SHAKE_QUERIES = listOf("摇一摇", "扭一扭", "手机")
     }
 }
 
@@ -50,8 +59,16 @@ class FallbackMatcher(private val config: FallbackConfig = FallbackConfig()) {
     /** 匹配结果：要点击的控件、命中的关键词、控件上的原始文字 */
     data class Match(val node: NodeInfo, val keyword: String, val matchedText: String)
 
-    /** 所有关键词（含有条件的），给 NodeFinder 做初筛用 */
-    val allKeywords: List<String> get() = config.keywords + config.conditionalKeywords
+    /** 所有关键词（含有条件的），完整遍历时用来初筛 */
+    val allKeywords: List<String> = config.keywords + config.conditionalKeywords
+
+    /**
+     * 快速路径的查询词：去掉被其他词包含的冗余词（"跳过广告"已经包含"跳过"，查"跳过"就能搜到），
+     * 每少一个词就少一次跨进程查询
+     */
+    val searchKeywords: List<String> = allKeywords.filter { word ->
+        allKeywords.none { other -> other != word && word.contains(other, ignoreCase = true) }
+    }
 
     /** 广告特征文字 */
     val adMarkers: List<String> get() = config.adMarkers

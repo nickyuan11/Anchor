@@ -218,17 +218,20 @@ class SkipAccessibilityService : AccessibilityService() {
 
         val startedAt = SystemClock.uptimeMillis()
 
-        // 1. 快速路径：让目标 App 自己按文字搜索
-        var candidates = NodeFinder.findByText(root, fallbackMatcher.allKeywords)
-        // 页面上找到的广告特征文字；null 表示还没检查过
-        var markers: Set<String>? = null
+        // 1. 快速路径：让目标 App 自己按文字搜索。
+        //    每个词都要在目标 App 的界面线程上排一次队，App 刚启动时这个线程很忙，所以词越少越好
+        var candidates = NodeFinder.findByText(root, fallbackMatcher.searchKeywords)
+        // 页面上有没有广告特征文字、有没有摇一摇类文字；null 表示还没检查过
+        var adMarkersPresent: Boolean? = null
+        var shakeDetected: Boolean? = null
         var path = "快速"
 
-        // 2. 搜不到时完整遍历（兼容不支持按文字搜索的界面），顺便收集广告特征文字
+        // 2. 搜不到时完整遍历（兼容不支持按文字搜索的界面），顺便检查广告特征文字
         if (candidates.isEmpty()) {
             val scan = NodeFinder.scan(root, fallbackMatcher.allKeywords, fallbackMatcher.adMarkers)
             candidates = scan.candidates
-            markers = scan.foundMarkers
+            adMarkersPresent = scan.foundMarkers.isNotEmpty()
+            shakeDetected = scan.foundMarkers.any { it in FallbackConfig.SHAKE_KEYWORDS }
             path = "完整遍历"
         }
         if (candidates.isEmpty()) {
@@ -236,52 +239,66 @@ class SkipAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 只有出现了"关闭"这类有条件的候选，才需要查广告特征文字
+        // 只有出现了"关闭"这类有条件的候选，才需要查广告特征文字；按常见程度逐个查，查到一个就停
         val infos = candidates.map { it.info }
-        if (markers == null && fallbackMatcher.hasConditionalCandidate(infos)) {
-            markers = NodeFinder.findAnyText(root, fallbackMatcher.adMarkers)
+        if (adMarkersPresent == null && fallbackMatcher.hasConditionalCandidate(infos)) {
+            adMarkersPresent = NodeFinder.findFirstText(root, fallbackMatcher.adMarkers) != null
         }
 
         // 用根节点（整个窗口）的大小作为屏幕尺寸
         val screen = Rect().also(root::getBoundsInScreen)
         val match = fallbackMatcher.findTarget(
-            infos, screen.width(), screen.height(), adMarkersPresent = !markers.isNullOrEmpty(),
+            infos, screen.width(), screen.height(), adMarkersPresent = adMarkersPresent == true,
         ) ?: return
         val target = candidates.first { it.info === match.node }
 
-        val activity = launchTracker.currentActivity
-        if (!debouncer.tryAcquire("$packageName|$activity|$RULE_FALLBACK")) return
+        // 防抖：同一个 App 的兜底规则 2 秒内只点一次。
+        // 键里不放页面名：App 打开过程中页面名可能从"未知"变成具体的 Activity，
+        // 放进去会被当成两个不同的按钮各点一次（M3 腾讯视频诊断日志里出现过）
+        if (!debouncer.tryAcquire("$packageName|$RULE_FALLBACK")) return
 
-        // 检测"摇一摇"类文字只为记日志。快速路径没查过的话，点击前补查一次（点完页面就变了）
-        val shakeDetected = (markers ?: NodeFinder.findAnyText(root, FallbackConfig.SHAKE_KEYWORDS))
-            .any { it in FallbackConfig.SHAKE_KEYWORDS }
-
-        val searchMs = SystemClock.uptimeMillis() - startedAt
-        val outcome = actionExecutor.click(target.node)
-        val elapsed = launchTracker.elapsedSinceLaunchMs()
-        diagnostics.add(
-            "命中 $packageName「${match.matchedText}」${match.node.bounds} 打开后${elapsed}ms 查找${searchMs}ms($path) " +
-                "→ ${outcome?.let { "${it.method}${it.gestureResult?.let { r -> "(${r.label})" } ?: ""}" } ?: "点击失败"}",
-        )
-        if (outcome == null) {
-            Log.w(TAG, "找到了跳过按钮但点击失败：$packageName / ${match.matchedText}")
-            return
-        }
-        Log.i(
-            TAG,
-            "已跳过 $packageName「${match.matchedText}」，方式=${outcome.method}，打开后 ${elapsed}ms，" +
-                "查找耗时 ${searchMs}ms（$path），摇一摇=$shakeDetected",
-        )
-        recordSkip(packageName, activity, match.keyword, match.matchedText, outcome.method, shakeDetected, elapsed)
-
-        // 点完检查一下是否真的生效，没生效就换方式重试
+        // 从现在起到"检查与重试"结束，这个 App 的其他事件不再触发点击。
+        // 必须在任何挂起操作（写数据库等）之前设置：挂起期间引擎线程会去处理排队的事件，
+        // 如果那时标记还没设置，排队的事件就会抢着再点一次（同样是 M3 腾讯视频日志里的问题）
         verifyingPackage = packageName
-        scope.launch {
-            try {
-                verifyClick(packageName, activity, target.node, match.keyword, shakeDetected)
-            } finally {
-                if (verifyingPackage == packageName) verifyingPackage = null
+        var handedOverToVerify = false
+        try {
+            val activity = launchTracker.currentActivity
+
+            // 检测"摇一摇"类文字只为记日志。快速路径没查过的话，点击前补查一次（点完页面就变了）。
+            // 用"手机"等 3 个短词代替 7 个完整关键词去查，再核对完整文字，少排几次队
+            val shake = shakeDetected
+                ?: NodeFinder.containsAnyKeyword(root, FallbackConfig.SHAKE_QUERIES, FallbackConfig.SHAKE_KEYWORDS)
+
+            val searchMs = SystemClock.uptimeMillis() - startedAt
+            val outcome = actionExecutor.click(target.node)
+            val elapsed = launchTracker.elapsedSinceLaunchMs()
+            diagnostics.add(
+                "命中 $packageName「${match.matchedText}」${match.node.bounds} 打开后${elapsed}ms 查找${searchMs}ms($path) " +
+                    "→ ${outcome?.let { "${it.method}${it.gestureResult?.let { r -> "(${r.label})" } ?: ""}" } ?: "点击失败"}",
+            )
+            if (outcome == null) {
+                Log.w(TAG, "找到了跳过按钮但点击失败：$packageName / ${match.matchedText}")
+                return
             }
+            Log.i(
+                TAG,
+                "已跳过 $packageName「${match.matchedText}」，方式=${outcome.method}，打开后 ${elapsed}ms，" +
+                    "查找耗时 ${searchMs}ms（$path），摇一摇=$shake",
+            )
+            recordSkip(packageName, activity, match.keyword, match.matchedText, outcome.method, shake, elapsed)
+
+            // 点完检查一下是否真的生效，没生效就换方式重试
+            scope.launch {
+                try {
+                    verifyClick(packageName, activity, target.node, match.keyword, shake)
+                } finally {
+                    if (verifyingPackage == packageName) verifyingPackage = null
+                }
+            }
+            handedOverToVerify = true
+        } finally {
+            if (!handedOverToVerify && verifyingPackage == packageName) verifyingPackage = null
         }
     }
 
@@ -512,8 +529,11 @@ class SkipAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
-        /** 点击后等多久检查按钮是否还在 */
-        const val VERIFY_DELAY_MS = 1_000L
+        /**
+         * 点击后等多久检查按钮是否还在。
+         * 0.3.2 用的是 1 秒；腾讯视频直接点控件无效，等 1 秒白白耽误时间，改为 0.5 秒
+         */
+        const val VERIFY_DELAY_MS = 500L
         const val JPEG_QUALITY = 85
         const val TAG = "SkipService"
         const val RULE_FALLBACK = "fallback"

@@ -105,11 +105,15 @@ class ActionExecutor(private val service: AccessibilityService) {
         private const val MAX_PARENT_DEPTH = 5
         private const val GESTURE_TIMEOUT_MS = 1_000L
 
-        val DEFAULT_TAP = TapStyle(0.5f, 0.5f, 50)
+        /**
+         * 默认的模拟点击：正中间按住 100ms。
+         * 腾讯视频的跳过按钮对按住 50ms 的模拟点击没反应，100ms 有效（M3 真机诊断日志）
+         */
+        val DEFAULT_TAP = TapStyle(0.5f, 0.5f, 100)
 
-        /** 点击无效后依次尝试的方式：按得更久、换个位置、再久一点 */
+        /** 点击无效后依次尝试的方式：正中间 100ms（腾讯视频实测有效）、换个位置、按得更久 */
         val RETRY_TAPS = listOf(
-            TapStyle(0.5f, 0.5f, 100),
+            DEFAULT_TAP,
             TapStyle(0.35f, 0.6f, 70),
             TapStyle(0.6f, 0.4f, 200),
         )

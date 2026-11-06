@@ -38,9 +38,25 @@ object NodeFinder {
         return nodes.map { Candidate(it.toNodeInfo(), it) }
     }
 
-    /** 页面上有没有出现这些文字中的任意一个（快速路径） */
-    fun findAnyText(root: AccessibilityNodeInfo, words: List<String>): Set<String> =
-        words.filterTo(LinkedHashSet()) { root.findAccessibilityNodeInfosByText(it).orEmpty().isNotEmpty() }
+    /**
+     * 按顺序查这些文字，返回页面上出现的第一个；都没有返回 null（快速路径）。
+     * 查到一个就停，所以把最常见的词放在前面能少查几次。
+     */
+    fun findFirstText(root: AccessibilityNodeInfo, words: List<String>): String? =
+        words.firstOrNull { root.findAccessibilityNodeInfosByText(it).orEmpty().isNotEmpty() }
+
+    /**
+     * 用几个短的查询词去搜，再核对命中控件的完整文字里有没有 [keywords] 之一（快速路径）。
+     * 例如用"手机"一个词，就能同时覆盖"扭转手机""翻转手机""转动手机"等，比逐个查快。
+     */
+    fun containsAnyKeyword(root: AccessibilityNodeInfo, queries: List<String>, keywords: List<String>): Boolean =
+        queries.any { query ->
+            root.findAccessibilityNodeInfosByText(query).orEmpty().any { node ->
+                val text = node.text?.toString()
+                val desc = node.contentDescription?.toString()
+                keywords.any { text.containsWord(it) || desc.containsWord(it) }
+            }
+        }
 
     /**
      * 完整遍历：广度优先走一遍控件树，同时收集候选控件和广告特征文字。
