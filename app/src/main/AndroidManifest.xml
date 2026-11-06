@@ -7,6 +7,18 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      Android 11 起，App 默认"看不到"手机上装了哪些其他 App。
+      这里声明"我需要看到所有桌面上有图标的 App"，用来把包名显示成 App 名称、
+      以及判断窗口类名是不是一个 Activity。不需要用户额外授权。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".AnchorApp"
         android:allowBackup="false"
@@ -28,6 +40,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          无障碍服务。
+          - permission=BIND_ACCESSIBILITY_SERVICE：只有系统能绑定（启动）它，其他 App 不行
+          - meta-data 指向 res/xml/accessibility_config.xml，即服务的能力配置
+          - label 是用户在系统"无障碍"设置列表里看到的名字
+        -->
+        <service
+            android:name=".service.SkipAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
     </application>
 
 </manifest>

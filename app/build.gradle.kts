@@ -48,6 +48,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
 
     // platform(...) 导入 BOM，类似 Maven 里 <scope>import</scope> 的 BOM
     implementation(platform(libs.androidx.compose.bom))
@@ -61,6 +64,13 @@ dependencies {
     // Hilt 依赖注入：运行时库 + 编译期代码生成器（ksp 相当于 Java 的 annotationProcessor）
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    // 在 Compose 页面里用 hiltViewModel() 获取由 Hilt 创建的 ViewModel
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+
+    // Room 数据库：runtime 是运行时库，compiler 在编译期根据注解生成 SQL 代码（类似 MyBatis 的 Mapper 实现）
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     // 单元测试（在电脑上运行，不需要模拟器）
     testImplementation(libs.junit)

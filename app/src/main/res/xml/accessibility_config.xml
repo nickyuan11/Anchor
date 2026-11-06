@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务的配置（design.md 第 7 节）。系统根据它决定给服务哪些能力、推送哪些事件。
+  - accessibilityEventTypes：只订阅"换页面"和"页面内容变化"两类事件
+  - canRetrieveWindowContent：允许读取页面上的控件（节点树）
+  - canPerformGestures：允许模拟手指点击，作为点不中控件时的最后手段
+  - flagReportViewIds：读取控件的 view id（M4 的规则会用到）
+  - flagRetrieveInteractiveWindows：可以读取所有可交互的窗口
+  - flagIncludeNotImportantViews：连"不重要"的控件也报告，有些跳过按钮被标成了不重要
+  - notificationTimeout：同类事件最少间隔多少毫秒推送一次，越小越及时
+  - 不写 packageNames：监听所有 App，过滤逻辑放在代码里
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="50" />

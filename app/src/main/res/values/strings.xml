@@ -2,5 +2,6 @@
 <!-- 默认（英文）字符串。系统语言为中文时，会改用 values-zh/strings.xml 里的同名字符串 -->
 <resources>
     <string name="app_name">Anchor</string>
-    <string name="service_status_placeholder">Accessibility service: not set up yet (coming in M2)</string>
+    <string name="accessibility_service_label">Anchor splash skipper</string>
+    <string name="accessibility_service_description">Automatically taps the \"Skip\" button on app splash ads, before an accidental shake can open the ad. Anchor only reads the screen to find the skip button. It does not collect or upload any data.</string>
 </resources>
