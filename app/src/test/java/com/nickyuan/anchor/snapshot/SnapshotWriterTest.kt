@@ -76,11 +76,12 @@ class SnapshotWriterTest {
     }
 
     @Test
-    fun `JSON 里是中文原文，默认值字段不写出来`() {
+    fun `JSON 里是中文原文，带格式版本号，其他默认值字段不写出来`() {
         val out = ByteArrayOutputStream()
         SnapshotWriter.write(snapshot, null, out)
         val json = unzip(out.toByteArray()).getValue(SnapshotWriter.JSON_ENTRY).toString(Charsets.UTF_8)
 
+        assertTrue(json.contains("\"formatVersion\": ${Snapshot.FORMAT_VERSION}"))
         assertTrue(json.contains("\"text\": \"跳过 5\""))
         assertTrue(json.contains("\"viewId\": \"com.example.app:id/skip\""))
         // FrameLayout 不可点击，clickable=false 是默认值，不应出现

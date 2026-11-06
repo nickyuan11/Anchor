@@ -1,5 +1,7 @@
 package com.nickyuan.anchor.snapshot
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /*
@@ -12,7 +14,12 @@ import kotlinx.serialization.Serializable
 /** 一份完整的页面快照 */
 @Serializable
 data class Snapshot(
-    /** 快照格式版本，以后改格式时加 1，方便兼容旧快照 */
+    /**
+     * 快照格式版本，以后改格式时加 1，方便兼容旧快照。
+     * @EncodeDefault：即使等于默认值也必须写进 JSON（SnapshotWriter 默认会省略默认值字段）
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault
     val formatVersion: Int = FORMAT_VERSION,
     /** 抓取时间，例如 "2026-11-06T15:30:12" */
     val capturedAt: String,
