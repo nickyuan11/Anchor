@@ -5,6 +5,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.nickyuan.anchor.ui.guide.GuideScreen
 import com.nickyuan.anchor.ui.home.HomeScreen
 import com.nickyuan.anchor.ui.logs.LogsScreen
 import com.nickyuan.anchor.ui.settings.SettingsScreen
@@ -18,6 +19,7 @@ private object Routes {
     const val SNAPSHOTS = "snapshots"
     const val SETTINGS = "settings"
     const val WHITELIST = "whitelist"
+    const val GUIDE = "guide"
 }
 
 /**
@@ -32,6 +34,7 @@ fun AnchorNavHost(navController: NavHostController = rememberNavController()) {
                 onOpenLogs = { navController.navigate(Routes.LOGS) },
                 onOpenSnapshots = { navController.navigate(Routes.SNAPSHOTS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenGuide = { navController.navigate(Routes.GUIDE) },
             )
         }
         composable(Routes.LOGS) {
@@ -45,6 +48,9 @@ fun AnchorNavHost(navController: NavHostController = rememberNavController()) {
                 onBack = { navController.popBackStack() },
                 onOpenWhitelist = { navController.navigate(Routes.WHITELIST) },
             )
+        }
+        composable(Routes.GUIDE) {
+            GuideScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.WHITELIST) {
             WhitelistScreen(onBack = { navController.popBackStack() })

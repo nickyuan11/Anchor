@@ -2,6 +2,7 @@ package com.nickyuan.anchor.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -78,6 +79,7 @@ class SkipAccessibilityService : AccessibilityService() {
     @Inject lateinit var appLabelProvider: AppLabelProvider
     @Inject lateinit var diagnostics: DiagnosticsLog
     @Inject lateinit var ruleRepository: RuleRepository
+    @Inject lateinit var serviceStatus: ServiceStatus
 
     /**
      * limitedParallelism(1)：从后台线程池里"切"出一个同一时刻只运行一个任务的调度器，
@@ -125,6 +127,13 @@ class SkipAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         actionExecutor = ActionExecutor(this)
         floatingButton = FloatingCaptureButton(this, onClick = ::captureSnapshot)
+
+        // 告诉界面"服务真的连上了"，并记下这次启动的时间（用来验证保活效果）
+        serviceStatus.setConnected(true)
+        mainScope.launch {
+            val count = settingsRepository.recordServiceStart(System.currentTimeMillis())
+            diagnostics.add("跳过服务启动（累计第 $count 次）")
+        }
 
         // 加载规则。放在引擎线程上执行，保证之后的事件处理时规则已经就绪
         scope.launch {
@@ -177,7 +186,14 @@ class SkipAccessibilityService : AccessibilityService() {
     /** 系统要求中断反馈时调用（主要用于读屏类服务），我们没有需要中断的东西 */
     override fun onInterrupt() = Unit
 
+    /** 系统解除绑定时调用：用户关掉了开关，或者系统要停掉服务 */
+    override fun onUnbind(intent: Intent?): Boolean {
+        serviceStatus.setConnected(false)
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
+        serviceStatus.setConnected(false)
         if (::floatingButton.isInitialized) floatingButton.hide()
         mainScope.cancel()
         scope.cancel()
@@ -246,7 +262,12 @@ class SkipAccessibilityService : AccessibilityService() {
         // 事件到达后窗口可能已经切走了，确认还是同一个 App
         if (root.packageName?.toString() != packageName) return
 
-        if (appRules != null && tryRules(packageName, appRules, root)) return
+        if (appRules != null) {
+            if (tryRules(packageName, appRules, root)) return
+            // 这次打开中专属规则已经处理过开屏广告了，之后页面上再出现"跳过""关闭"之类的按钮
+            // 多半是正常内容（0.4.0 腾讯视频：规则跳过后，兜底又点了首页的"关闭广告"），不再走兜底
+            if (ruleCounter.total() > 0) return
+        }
         if (fallbackEnabled && launchTracker.isInLaunchWindow(packageName, fallbackWindowMs)) {
             tryFallback(packageName, root)
         }

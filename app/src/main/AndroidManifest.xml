@@ -12,6 +12,12 @@
       这里声明"我需要看到所有桌面上有图标的 App"，用来把包名显示成 App 名称、
       以及判断窗口类名是不是一个 Activity。不需要用户额外授权。
     -->
+    <!--
+      允许弹出系统对话框，请用户把本 App 加入"不受电池优化限制"的名单（保活引导使用）。
+      只是允许"发起请求"，最终同不同意仍由用户在对话框里决定。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

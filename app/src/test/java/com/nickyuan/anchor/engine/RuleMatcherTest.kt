@@ -166,7 +166,9 @@ class RuleMatcherTest {
         counter.increment("r")
         counter.syncLaunch(1)
         assertEquals(1, counter.count("r"))
+        assertEquals(1, counter.total())
         counter.syncLaunch(2)
         assertEquals(0, counter.count("r"))
+        assertEquals(0, counter.total())
     }
 }

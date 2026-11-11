@@ -19,6 +19,9 @@ class PerLaunchCounter {
 
     fun count(key: String): Int = counts[key] ?: 0
 
+    /** 本次打开中所有规则一共执行了几次 */
+    fun total(): Int = counts.values.sum()
+
     fun increment(key: String) {
         counts[key] = count(key) + 1
     }

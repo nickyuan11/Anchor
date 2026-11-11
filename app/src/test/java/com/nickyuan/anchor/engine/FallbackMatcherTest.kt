@@ -117,6 +117,14 @@ class FallbackMatcherTest {
     }
 
     @Test
+    fun `关闭广告这类不只是关闭两个字的按钮不点，带倒计时数字的关闭可以`() {
+        val upsell = node("关闭广告", cx = 980, cy = 120)
+        assertNull(matcher.findTarget(listOf(upsell), w, h, adMarkersPresent = true))
+        assertFalse(matcher.hasConditionalCandidate(listOf(upsell)))
+        assertNotNull(matcher.findTarget(listOf(node("关闭 3", cx = 980, cy = 120)), w, h, adMarkersPresent = true))
+    }
+
+    @Test
     fun `跳过和关闭同时存在时优先跳过`() {
         val close = node("关闭", cx = 980, cy = 120, width = 100, height = 50)
         val skip = node("跳过", cx = 980, cy = 2300, width = 160, height = 70)

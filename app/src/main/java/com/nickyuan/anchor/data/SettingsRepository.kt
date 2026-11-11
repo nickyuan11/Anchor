@@ -5,6 +5,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -56,7 +58,51 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    // ---------- 开启与保活引导（M4b） ----------
+
+    /** 是否已经自动弹出过一次开启引导 */
+    val onboardingShown: Flow<Boolean> =
+        dataStore.data.map { it[KEY_ONBOARDING_SHOWN] ?: false }
+
+    suspend fun setOnboardingShown() {
+        dataStore.edit { it[KEY_ONBOARDING_SHOWN] = true }
+    }
+
+    /** 用户在保活引导里勾选了"已设置"的步骤 id */
+    val guideChecked: Flow<Set<String>> =
+        dataStore.data.map { it[KEY_GUIDE_CHECKED] ?: emptySet() }
+
+    suspend fun setGuideChecked(stepId: String, checked: Boolean) {
+        dataStore.edit {
+            val current = it[KEY_GUIDE_CHECKED] ?: emptySet()
+            it[KEY_GUIDE_CHECKED] = if (checked) current + stepId else current - stepId
+        }
+    }
+
+    /** 跳过服务最近几次启动的时间，从旧到新（见 ServiceStartHistory） */
+    val serviceStarts: Flow<List<Long>> =
+        dataStore.data.map { ServiceStartHistory.parse(it[KEY_SERVICE_STARTS]) }
+
+    /** 跳过服务累计启动了多少次 */
+    val serviceStartCount: Flow<Int> =
+        dataStore.data.map { it[KEY_SERVICE_START_COUNT] ?: 0 }
+
+    /** 服务每次启动时调用。返回这是第几次启动 */
+    suspend fun recordServiceStart(startedAt: Long): Int {
+        var count = 0
+        dataStore.edit {
+            it[KEY_SERVICE_STARTS] = ServiceStartHistory.append(it[KEY_SERVICE_STARTS], startedAt)
+            count = (it[KEY_SERVICE_START_COUNT] ?: 0) + 1
+            it[KEY_SERVICE_START_COUNT] = count
+        }
+        return count
+    }
+
     private companion object {
+        val KEY_ONBOARDING_SHOWN = booleanPreferencesKey("onboarding_shown")
+        val KEY_GUIDE_CHECKED = stringSetPreferencesKey("guide_checked")
+        val KEY_SERVICE_STARTS = stringPreferencesKey("service_starts")
+        val KEY_SERVICE_START_COUNT = intPreferencesKey("service_start_count")
         val KEY_SNAPSHOT_BUTTON = booleanPreferencesKey("snapshot_button_enabled")
         val KEY_FALLBACK = booleanPreferencesKey("fallback_enabled")
         val KEY_WHITELIST = stringSetPreferencesKey("whitelist")

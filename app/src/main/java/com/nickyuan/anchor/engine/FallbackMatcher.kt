@@ -10,6 +10,8 @@ data class FallbackConfig(
     /**
      * 有条件的关键词：太常见、容易误点的词（例如"关闭"），
      * 只有页面上同时出现了 [adMarkers] 里的广告特征文字时才生效。
+     * 并且按钮文字必须就是这个词（去掉空白和倒计时数字后完全相同）：
+     * "关闭广告"这类按钮在视频 App 里常常通向开通会员页，不能点（0.4.0 真机记录里误点过）。
      * 来源：爱奇艺开屏广告的按钮写的是"关闭"（M3 真机快照）。
      */
     val conditionalKeywords: List<String> = listOf("关闭"),
@@ -76,7 +78,7 @@ class FallbackMatcher(private val config: FallbackConfig = FallbackConfig()) {
     /** 候选里是否有"只靠有条件关键词命中"的控件——有的话才值得去检查广告特征，省一次查询 */
     fun hasConditionalCandidate(candidates: List<NodeInfo>): Boolean = candidates.any { node ->
         val label = node.label ?: return@any false
-        matchKeyword(label, config.keywords) == null && matchKeyword(label, config.conditionalKeywords) != null
+        matchKeyword(label, config.keywords) == null && matchConditional(label) != null
     }
 
     /**
@@ -96,7 +98,7 @@ class FallbackMatcher(private val config: FallbackConfig = FallbackConfig()) {
         val matches = candidates.mapNotNull { node ->
             val label = node.label ?: return@mapNotNull null
             val keyword = matchKeyword(label, config.keywords)
-                ?: (if (adMarkersPresent) matchKeyword(label, config.conditionalKeywords) else null)
+                ?: (if (adMarkersPresent) matchConditional(label) else null)
                 ?: return@mapNotNull null
             if (!node.isVisibleToUser || node.bounds.isEmpty) return@mapNotNull null
             if (!isInCorner(node.bounds, screenWidth, screenHeight)) return@mapNotNull null
@@ -123,6 +125,12 @@ class FallbackMatcher(private val config: FallbackConfig = FallbackConfig()) {
         val normalized = label.filterNot { it.isWhitespace() }
         if (normalized.length > config.maxTextLength) return null
         return words.firstOrNull { normalized.contains(it, ignoreCase = true) }
+    }
+
+    /** 有条件关键词：去掉空白和数字后必须完全相同（"关闭 3" 可以，"关闭广告" 不行） */
+    private fun matchConditional(label: String): String? {
+        val normalized = label.filterNot { it.isWhitespace() || it.isDigit() }
+        return config.conditionalKeywords.firstOrNull { normalized.equals(it, ignoreCase = true) }
     }
 
     private fun isInCorner(b: Bounds, w: Int, h: Int): Boolean {
