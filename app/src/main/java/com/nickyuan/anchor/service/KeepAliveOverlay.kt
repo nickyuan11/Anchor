@@ -8,11 +8,15 @@ import android.view.View
 import android.view.WindowManager
 
 /**
- * 保活用的隐形悬浮窗：屏幕左上角一个 1 像素、几乎全透明、点不到的小窗口。
+ * 保活用的隐形悬浮窗：屏幕左上角一个和 📷 按钮一样大、几乎全透明、点不到的窗口。
  *
  * 为什么需要它：红米 K70（澎湃 OS）的朋友反馈，只有打开 📷 悬浮按钮时才能稳定跳过。
- * 推断原因是澎湃 OS 会冻结"没有可见窗口"的后台进程，冻结期间收不到页面变化事件；
- * 屏幕上有我们的窗口时，进程就不会被冻结。所以服务运行期间一直保留这个看不见的小窗口。
+ * 鸿蒙 4.2 的诊断日志证实了原因：系统会冻结"没有可见窗口"的后台进程，冻结期间事件全部积压，
+ * 等进程解冻才一次性补送；屏幕上有我们的窗口时，进程就不会被冻结。
+ * 所以服务运行期间一直保留这个看不见的窗口。
+ *
+ * 大小特意做成和 📷 按钮一样（52dp）：已知那么大的窗口能防冻结，
+ * 而系统会不会把 1 像素的窗口也算作"可见"并不确定。
  *
  * 和 📷 按钮一样使用无障碍悬浮层（TYPE_ACCESSIBILITY_OVERLAY），不需要悬浮窗权限。
  * 所有方法必须在主线程调用。
@@ -24,9 +28,10 @@ class KeepAliveOverlay(private val service: AccessibilityService) {
 
     fun show() {
         if (view != null) return
+        val sizePx = (SIZE_DP * service.resources.displayMetrics.density).toInt()
         val params = WindowManager.LayoutParams(
-            1,
-            1,
+            sizePx,
+            sizePx,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             // 不抢焦点、不接收触摸：触摸会直接穿过它，落到下面的 App 上
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
@@ -42,5 +47,9 @@ class KeepAliveOverlay(private val service: AccessibilityService) {
     fun hide() {
         view?.let { windowManager.removeView(it) }
         view = null
+    }
+
+    private companion object {
+        const val SIZE_DP = 52
     }
 }

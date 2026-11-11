@@ -112,6 +112,10 @@ class SkipAccessibilityService : AccessibilityService() {
     /** 缓存"某个类名是不是 Activity"的查询结果，避免重复查询 PackageManager */
     private val activityClassCache = HashMap<String, Boolean>()
 
+    // 过期事件统计，只在主线程读写
+    private var staleEventCount = 0
+    private var staleEventMaxDelayMs = 0L
+
     /** 正在做"点击后检查与重试"的包名。期间这个 App 的其他事件不再触发新的点击，避免和重试互相干扰 */
     private var verifyingPackage: String? = null
 
@@ -165,6 +169,19 @@ class SkipAccessibilityService : AccessibilityService() {
         // 事件从产生到送达我们这里花了多久。正常只有几十毫秒；
         // 如果动辄几秒，说明进程被系统冻结过，事件是解冻后才补送的
         val delayMs = SystemClock.uptimeMillis() - event.eventTime
+
+        // 过期事件直接丢弃：进程被冻结后解冻时，系统会把积压的旧事件一口气补送过来。
+        // 这些事件描述的是几十秒前的页面，按它们去判断"刚打开了哪个 App"只会出错
+        if (delayMs > STALE_EVENT_MS) {
+            staleEventCount++
+            staleEventMaxDelayMs = maxOf(staleEventMaxDelayMs, delayMs)
+            return
+        }
+        if (staleEventCount > 0) {
+            diagnostics.add("丢弃了 $staleEventCount 个过期事件，最长延迟 ${staleEventMaxDelayMs}ms（进程可能被冻结过）")
+            staleEventCount = 0
+            staleEventMaxDelayMs = 0
+        }
 
         when (event.eventType) {
             // 换页面：每次都处理（数量不多，而且是最早发现开屏广告的时机）
@@ -710,6 +727,8 @@ class SkipAccessibilityService : AccessibilityService() {
          * 0.3.2 用的是 1 秒；腾讯视频直接点控件无效，等 1 秒白白耽误时间，改为 0.5 秒
          */
         const val VERIFY_DELAY_MS = 500L
+        /** 事件送达延迟超过这个值就当作过期事件丢弃 */
+        const val STALE_EVENT_MS = 3_000L
         const val JPEG_QUALITY = 85
         const val TAG = "SkipService"
         const val RULE_FALLBACK = "fallback"

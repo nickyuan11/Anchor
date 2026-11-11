@@ -20,8 +20,8 @@ android {
         minSdk = 26
         // targetSdk：声明 App 已适配到哪个 Android 版本，系统据此决定启用哪些新行为
         targetSdk = 37
-        versionCode = 9          // 内部版本号，每次发版递增
-        versionName = "0.4.2"    // 给人看的版本号
+        versionCode = 10          // 内部版本号，每次发版递增
+        versionName = "0.4.3"    // 给人看的版本号
     }
 
     buildTypes {
