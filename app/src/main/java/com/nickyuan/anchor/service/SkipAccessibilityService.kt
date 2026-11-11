@@ -117,6 +117,7 @@ class SkipAccessibilityService : AccessibilityService() {
 
     // ---- 页面快照（M3） ----
     private lateinit var floatingButton: FloatingCaptureButton
+    private lateinit var keepAliveOverlay: KeepAliveOverlay
     private val snapshotCapturer = SnapshotCapturer()
 
     /** 是否正在抓取。防止连点按钮时同时抓好几份 */
@@ -127,6 +128,8 @@ class SkipAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         actionExecutor = ActionExecutor(this)
         floatingButton = FloatingCaptureButton(this, onClick = ::captureSnapshot)
+        // 隐形的保活小窗口：防止进程被系统冻结而收不到事件（见 KeepAliveOverlay）
+        keepAliveOverlay = KeepAliveOverlay(this).also { it.show() }
 
         // 告诉界面"服务真的连上了"，并记下这次启动的时间（用来验证保活效果）
         serviceStatus.setConnected(true)
@@ -159,11 +162,14 @@ class SkipAccessibilityService : AccessibilityService() {
         // 事件对象在回调结束后会被系统回收复用，所以先把需要的字段抄下来
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString()
+        // 事件从产生到送达我们这里花了多久。正常只有几十毫秒；
+        // 如果动辄几秒，说明进程被系统冻结过，事件是解冻后才补送的
+        val delayMs = SystemClock.uptimeMillis() - event.eventTime
 
         when (event.eventType) {
             // 换页面：每次都处理（数量不多，而且是最早发现开屏广告的时机）
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> scope.launch {
-                onWindowStateChanged(packageName, className)
+                onWindowStateChanged(packageName, className, delayMs)
             }
 
             // 页面内容变化：非常频繁。前一个还没处理完就直接丢弃新的
@@ -195,6 +201,7 @@ class SkipAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         serviceStatus.setConnected(false)
         if (::floatingButton.isInitialized) floatingButton.hide()
+        if (::keepAliveOverlay.isInitialized) keepAliveOverlay.hide()
         mainScope.cancel()
         scope.cancel()
         Log.i(TAG, "跳过服务已停止")
@@ -203,7 +210,7 @@ class SkipAccessibilityService : AccessibilityService() {
 
     // ---------------- 以下都运行在 engineDispatcher（单线程）上 ----------------
 
-    private suspend fun onWindowStateChanged(packageName: String, className: String?) {
+    private suspend fun onWindowStateChanged(packageName: String, className: String?, delayMs: Long) {
         val activity = className?.takeIf { isActivity(packageName, it) }
         // 查不到 Activity 时，再看用户正在操作的窗口是不是属于这个 App（插件化 App 靠这一条识别）
         val activeWindowPackage = if (activity == null) activeAppWindowPackage() else null
@@ -217,7 +224,7 @@ class SkipAccessibilityService : AccessibilityService() {
                     isNewLaunch -> " → 新打开"
                     isAppWindow -> " → 同一App"
                     else -> " → 忽略"
-                },
+                } + " 延迟${delayMs}ms",
         )
         trySkip(packageName)
     }
