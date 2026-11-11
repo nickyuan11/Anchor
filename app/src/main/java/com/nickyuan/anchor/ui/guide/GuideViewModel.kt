@@ -8,6 +8,8 @@ import com.nickyuan.anchor.guide.DeviceBrand
 import com.nickyuan.anchor.guide.KeepAliveGuide
 import com.nickyuan.anchor.guide.KeepAliveStep
 import com.nickyuan.anchor.service.ServiceStatus
+import com.nickyuan.anchor.util.DiagnosticsLog
+import com.nickyuan.anchor.util.SystemSettingsNavigator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +21,7 @@ import javax.inject.Inject
 class GuideViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     serviceStatus: ServiceStatus,
+    private val diagnostics: DiagnosticsLog,
 ) : ViewModel() {
 
     /** 根据系统提供的厂商、品牌名识别手机品牌 */
@@ -32,6 +35,11 @@ class GuideViewModel @Inject constructor(
     /** 用户勾选了"已设置"的保活步骤 */
     val checked: StateFlow<Set<String>> = settingsRepository.guideChecked
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** 把跳转尝试的结果记进诊断日志（随页面快照导出） */
+    fun logJump(stepId: String, result: SystemSettingsNavigator.JumpResult) {
+        diagnostics.add("保活跳转 $stepId（${Build.MANUFACTURER} ${Build.DISPLAY}）：${result.attempts.joinToString("；").ifEmpty { "无候选" }}")
+    }
 
     fun setChecked(stepId: String, checked: Boolean) {
         viewModelScope.launch { settingsRepository.setGuideChecked(stepId, checked) }

@@ -127,8 +127,9 @@ fun GuideScreen(onBack: () -> Unit, viewModel: GuideViewModel = hiltViewModel())
                     buttonLabel = step.buttonLabel,
                     onClick = {
                         val target = step.target ?: return@StepCard
-                        val opened = SystemSettingsNavigator.openKeepAlive(context, viewModel.brand, target)
-                        if (!opened) {
+                        val result = SystemSettingsNavigator.openKeepAlive(context, viewModel.brand, target)
+                        viewModel.logJump(step.id, result)
+                        if (!result.opened) {
                             // Toast：屏幕底部短暂出现的一行提示
                             Toast.makeText(context, "没找到对应页面，已打开应用信息页，请在里面找找", Toast.LENGTH_LONG).show()
                         }

@@ -19,6 +19,13 @@ import com.nickyuan.anchor.guide.KeepAliveTarget
  */
 object SystemSettingsNavigator {
 
+    /**
+     * 一次保活页面跳转的结果。
+     * @param opened true = 打开了对应的专门页面；false = 没找到，已退回到应用信息页
+     * @param attempts 每个候选页面的尝试结果，写进诊断日志，方便远程排查哪条路径有效
+     */
+    data class JumpResult(val opened: Boolean, val attempts: List<String>)
+
     private const val TAG = "SettingsNavigator"
 
     /** 本 App 的"应用信息"页（"允许受限制的设置"就在这个页面右上角的菜单里） */
@@ -43,11 +50,8 @@ object SystemSettingsNavigator {
         ),
     ) || openAppDetails(context)
 
-    /**
-     * 打开保活设置页面。
-     * @return true = 打开了对应的专门页面；false = 没找到，已退回到应用信息页
-     */
-    fun openKeepAlive(context: Context, brand: DeviceBrand, target: KeepAliveTarget): Boolean {
+    /** 打开保活设置页面，全部候选都失败时退回到应用信息页 */
+    fun openKeepAlive(context: Context, brand: DeviceBrand, target: KeepAliveTarget): JumpResult {
         val candidates = when (target) {
             KeepAliveTarget.APP_DETAILS -> emptyList()
             KeepAliveTarget.AUTO_START -> when (brand) {
@@ -59,6 +63,9 @@ object SystemSettingsNavigator {
                     component("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
                     component("com.huawei.systemmanager", "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity"),
                     component("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"),
+                    // 以下两个是给较新系统（鸿蒙）准备的候选，尚未在真机上确认
+                    Intent("huawei.intent.action.HSM_BOOTAPP_MANAGER").setPackage("com.huawei.systemmanager"),
+                    component("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.bootstart.BootStartActivity"),
                     component("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
                 )
                 DeviceBrand.OTHER -> emptyList()
@@ -72,9 +79,10 @@ object SystemSettingsNavigator {
                 else -> emptyList()
             }
         }
-        if (tryStart(context, candidates)) return true
+        val attempts = mutableListOf<String>()
+        if (tryStart(context, candidates, attempts)) return JumpResult(true, attempts)
         openAppDetails(context)
-        return false
+        return JumpResult(false, attempts)
     }
 
     private fun component(packageName: String, className: String) = Intent().setClassName(packageName, className)
@@ -82,15 +90,18 @@ object SystemSettingsNavigator {
     private fun packageUri(context: Context): Uri = Uri.fromParts("package", context.packageName, null)
 
     /** 挨个尝试，第一个能打开的就算成功 */
-    private fun tryStart(context: Context, intents: List<Intent>): Boolean {
+    private fun tryStart(context: Context, intents: List<Intent>, attempts: MutableList<String>? = null): Boolean {
         for (intent in intents) {
+            val name = intent.component?.flattenToShortString() ?: intent.action ?: intent.toString()
             try {
                 // 从非 Activity 的 Context 打开页面时必须加 NEW_TASK
                 context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                attempts?.add("$name → 成功")
                 return true
             } catch (e: Exception) {
                 // 页面不存在（ActivityNotFoundException）或不允许外部打开（SecurityException），试下一个
-                Log.i(TAG, "打不开 $intent：${e.javaClass.simpleName}")
+                Log.i(TAG, "打不开 $name：${e.javaClass.simpleName}")
+                attempts?.add("$name → ${e.javaClass.simpleName}")
             }
         }
         return false
