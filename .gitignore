@@ -16,6 +16,8 @@ local.properties
 # 签名文件不提交（M5 配置 release 签名时会用到）
 *.jks
 *.keystore
+# 签名钥匙的路径和密码，只放在自己电脑上
+keystore.properties
 
 # 系统文件
 .DS_Store

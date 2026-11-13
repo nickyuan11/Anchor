@@ -1,10 +1,29 @@
 // app 模块构建脚本，类似一个子模块的 pom.xml。
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+// ---------- 正式包签名 ----------
+// 签名用的钥匙（keystore）和密码不能进仓库，所以写在项目根目录的 keystore.properties 里
+// （已被 .gitignore 排除），格式见 keystore.properties.example，生成步骤见 README.md。
+// 没有这个文件时照常构建，只是 release 包不签名（不能安装）。
+val keystoreProps = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasReleaseKey = keystoreProps.getProperty("storeFile") != null
+
+val appVersionName = "1.0.0"
+
+// 生成的 APK 文件名前缀：anchor-1.0.0-release.apk / anchor-1.0.0-debug.apk
+base {
+    archivesName.set("anchor-$appVersionName")
 }
 
 android {
@@ -20,14 +39,27 @@ android {
         minSdk = 26
         // targetSdk：声明 App 已适配到哪个 Android 版本，系统据此决定启用哪些新行为
         targetSdk = 37
-        versionCode = 11          // 内部版本号，每次发版递增
-        versionName = "0.4.4"    // 给人看的版本号
+        versionCode = 12          // 内部版本号，每次发版递增；系统靠它判断哪个版本更新
+        versionName = appVersionName // 给人看的版本号
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
-            // 代码混淆/压缩，M5 打正式包时再评估是否开启
+            // 代码混淆/压缩（R8）。v1.0 先不开：开启后可能影响 JSON 解析、数据库等靠生成代码工作的部分，
+            // 而这类问题只会在真机上暴露。以后想缩小安装包时再开启并充分测试
             isMinifyEnabled = false
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
